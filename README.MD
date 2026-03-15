@@ -1,6 +1,14 @@
 # auto-openvpn-static-ip
 
-在 Ubuntu 上自动安装 OpenVPN，并在创建客户端时自动为该客户端生成 CCD 静态 IP 绑定。
+基于官方脚本改造。在 Linux/Ubuntu 上自动安装 OpenVPN，并在创建客户端时自动为该客户端生成 CCD 静态 IP 绑定。
+
+## 快速开始
+
+```bash
+git clone https://github.com/SunnyBingoMe/auto-openvpn-static-ip.git
+cd auto-openvpn-static-ip
+sudo sh ./install.sh
+```
 
 ## 效果
 

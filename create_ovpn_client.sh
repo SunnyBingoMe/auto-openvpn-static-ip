@@ -6,8 +6,16 @@ CN="${1:?missing client name}"
 SCRIPT_PATH="$(readlink -f "$0")"
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 
-CLIENT_DIR="${OPENVPN_CLIENT_DIR:-/etc/openvpn/client}"
+DEFAULT_CLIENT_DIR="/etc/openvpn/client"
 CCD_DIR="/etc/openvpn/ccd"
+
+validate_client_name() {
+  if [[ ! "$CN" =~ ^[A-Za-z0-9_-]+$ ]]; then
+    echo "Invalid client name: $CN" >&2
+    echo "Allowed characters: letters, numbers, '-' and '_'" >&2
+    exit 1
+  fi
+}
 
 require_root() {
   if [ "$(id -u)" -eq 0 ]; then
@@ -89,7 +97,29 @@ find_generated_profile() {
   return 1
 }
 
+resolve_client_dir() {
+  local user_home=""
+
+  if [ -n "${OPENVPN_CLIENT_DIR:-}" ]; then
+    printf '%s\n' "$OPENVPN_CLIENT_DIR"
+    return 0
+  fi
+
+  if [ -n "${SUDO_USER:-}" ]; then
+    user_home="$(getent passwd "$SUDO_USER" 2>/dev/null | cut -d: -f6 || true)"
+    if [ -n "$user_home" ] && [ -d "$user_home" ] && [ "$user_home" != "/" ]; then
+      printf '%s\n' "$user_home"
+      return 0
+    fi
+  fi
+
+  printf '%s\n' "$DEFAULT_CLIENT_DIR"
+}
+
+validate_client_name
 require_root "$@"
+
+CLIENT_DIR="$(resolve_client_dir)"
 
 INSTALL_SCRIPT="$(find_install_script || true)"
 ASSIGN_SCRIPT="$(find_assign_script || true)"
@@ -136,6 +166,10 @@ fi
 
 mv "$PROFILE_SOURCE" "$CLIENT_DIR/${CN}.ovpn"
 chmod 600 "$CLIENT_DIR/${CN}.ovpn"
+
+if [ -n "${SUDO_USER:-}" ] && getent group "$SUDO_USER" >/dev/null 2>&1; then
+  chown "$SUDO_USER:$SUDO_USER" "$CLIENT_DIR/${CN}.ovpn"
+fi
 
 echo "Created client cert, CCD, and profile for ${CN}"
 echo "Install script: ${INSTALL_SCRIPT}"

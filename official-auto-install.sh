@@ -464,8 +464,8 @@ enter_server_address() {
 }
 
 find_public_ip() {
-	ip_url1="http://ipv4.icanhazip.com"
-	ip_url2="http://ip1.dynupdate.no-ip.com"
+	ip_url1="https://ipv4.icanhazip.com"
+	ip_url2="https://ip1.dynupdate.no-ip.com"
 	# Get public IP and sanitize with grep
 	get_public_ip=$(grep -m 1 -oE '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' <<< "$(wget -T 10 -t 1 -4qO- "$ip_url1" || curl -m 10 -4Ls "$ip_url1")")
 	if ! check_ip "$get_public_ip"; then
@@ -1509,7 +1509,7 @@ if [[ ! -e "$OVPN_CONF" ]]; then
 	install_easyrsa
 	create_pki_and_certs
 	mkdir -p /etc/openvpn/ccd
-	chmod 755 /etc/openvpn/ccd
+	chmod 700 /etc/openvpn/ccd
 	create_server_config
 	update_sysctl
 	create_firewall_rules

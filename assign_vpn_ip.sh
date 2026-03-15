@@ -12,11 +12,21 @@ START_HOST="${OPENVPN_START_HOST:-10}"
 END_HOST="${OPENVPN_END_HOST:-254}"
 MASK="${OPENVPN_MASK:-255.255.0.0}"
 
+validate_client_name() {
+  if [[ ! "$CN" =~ ^[A-Za-z0-9_-]+$ ]]; then
+    echo "Invalid client name: $CN" >&2
+    echo "Allowed characters: letters, numbers, '-' and '_'" >&2
+    exit 1
+  fi
+}
+
 if [ "$(id -u)" -ne 0 ]; then
   echo "This script must be run as root or with sudo." >&2
   echo "Example: sudo bash $0 <client name>" >&2
   exit 1
 fi
+
+validate_client_name
 
 if [ -z "$IPP_FILE" ]; then
   if [ -f "/etc/openvpn/server/ipp.txt" ]; then
@@ -33,7 +43,15 @@ mkdir -p "$CCD_DIR"
 exec 9>"$LOCK_FILE"
 flock -x 9
 
-CCD_FILE="$CCD_DIR/$CN"
+CCD_FILE="${CCD_DIR}/${CN}"
+case "$CCD_FILE" in
+  "${CCD_DIR}"/*) ;;
+  *)
+    echo "Refusing to write outside CCD dir: $CCD_FILE" >&2
+    exit 1
+    ;;
+esac
+
 if [ -f "$CCD_FILE" ]; then
   echo "CCD already exists for $CN"
   exit 0
@@ -90,7 +108,7 @@ is_ip_used() {
 while IFS= read -r ip; do
   if ! is_ip_used "$ip"; then
     printf 'ifconfig-push %s %s\n' "$ip" "$MASK" > "$CCD_FILE"
-    chmod 644 "$CCD_FILE"
+    chmod 600 "$CCD_FILE"
     echo "Assigned $CN -> $ip"
     exit 0
   fi

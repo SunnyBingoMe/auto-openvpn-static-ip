@@ -14,10 +14,11 @@ sudo sh ./install.sh
 
 - 运行 `bash install.sh` 时，如果当前用户不是 root 但可以使用 `sudo`，脚本会自动提权继续执行。
 - 安装完成后，OpenVPN 服务端配置和辅助脚本会放到 `/etc/openvpn` 体系下。
-- 运行 `create_ovpn_client.sh my_client_name` 时，会自动：
+- 运行 `sudo create_ovpn_client.sh my_client_name` 时，会自动：
   - 创建客户端证书和 `.ovpn` 配置文件
   - 为该客户端生成 CCD 文件
   - 自动分配一个静态 VPN IP
+- 如果是通过 `sudo` 由普通用户触发，生成的 `.ovpn` 会优先保存到该用户的 home 目录，并尽量保持归属该用户。
 - 新生成的客户端配置默认使用分流模式：保留 VPN 网段访问，但忽略服务端推送的默认路由和 DNS。
 
 ## 安装后目录
@@ -27,7 +28,7 @@ sudo sh ./install.sh
 - `/etc/openvpn/server/create_ovpn_client.sh`：客户端创建脚本
 - `/etc/openvpn/server/assign_vpn_ip.sh`：CCD 静态 IP 分配脚本
 - `/etc/openvpn/ccd`：客户端 CCD 目录
-- `/etc/openvpn/client`：生成后的客户端 `.ovpn` 文件目录
+- `/etc/openvpn/client`：未通过普通用户 `sudo` 调用时的 `.ovpn` 默认回退目录
 - `/usr/local/sbin/create_ovpn_client.sh`：便于直接调用的命令入口
 
 ## 使用方式
@@ -42,14 +43,14 @@ bash install.sh
 
 - 调用 `official-auto-install.sh --auto` 进行无人值守安装
 - 确保 `server.conf` 中包含 `client-config-dir /etc/openvpn/ccd`
-- 创建 `/etc/openvpn/ccd` 和 `/etc/openvpn/client`
+- 创建 `/etc/openvpn/ccd` 和 `/etc/openvpn/client`（作为 `.ovpn` 的回退保存目录）
 - 设置相应权限
 - 部署辅助脚本到 `/etc/openvpn/server`
 
 ### 2. 创建客户端并自动绑定静态 IP
 
 ```bash
-create_ovpn_client.sh my_client_name
+sudo create_ovpn_client.sh my_client_name
 ```
 
 执行后会：
@@ -62,7 +63,7 @@ create_ovpn_client.sh my_client_name
 ifconfig-push 172.22.X.Y 255.255.0.0
 ```
 
-- 将生成的客户端配置文件保存到：
+- 将生成的客户端配置文件优先保存到当前 `sudo` 调用用户的 home 目录；如果拿不到该目录，则回退保存到：
 
 ```bash
 /etc/openvpn/client/my_client_name.ovpn
@@ -87,12 +88,15 @@ route 172.22.0.0 255.255.0.0
 
 ## 权限说明
 
-- `install.sh` 和 `create_ovpn_client.sh` 都支持在非 root 用户下执行，只要该用户可以使用 `sudo`。
+- `install.sh` 和 `create_ovpn_client.sh` 都支持在非 root 用户下通过 `sudo` 执行。
 - `/etc/openvpn/server/create_ovpn_client.sh`
 - `/etc/openvpn/server/assign_vpn_ip.sh`
 - `/etc/openvpn/server/official-auto-install.sh`
+- `/etc/openvpn/ccd`
 
-以上脚本安装后会设置为仅 root 可执行。
+以上脚本和 CCD 目录安装后会设置为仅 root 可访问。
+
+如果是通过 `sudo` 由普通用户创建客户端，生成的 `.ovpn` 会尽量归属该普通用户，而不是 `root`。
 
 ## 静态 IP 分配规则
 
@@ -155,7 +159,7 @@ sudo sed -i 's/10\.8\./172.22./g' /etc/openvpn/server/ipp.txt
 旧版本生成的 `.ovpn` 文件里仍可能保留旧路由或旧访问假设。建议为仍在使用的客户端重新生成：
 
 ```bash
-create_ovpn_client.sh my_client_name
+sudo create_ovpn_client.sh my_client_name
 ```
 
 新生成的配置会默认使用：

@@ -30,7 +30,7 @@ require_root() {
     exit 1
   fi
 
-  exec sudo -E bash "$SCRIPT_PATH" "$@"
+  exec sudo bash "$SCRIPT_PATH" "$@"
 }
 
 deploy_file() {
@@ -77,7 +77,7 @@ deploy_file "$INSTALL_SOURCE" "$INSTALL_TARGET" 700
 deploy_file "$CLIENT_SOURCE" "$CLIENT_TARGET" 700
 deploy_file "$ASSIGN_SOURCE" "$ASSIGN_TARGET" 700
 
-chmod 755 "$CCD_DIR"
+chmod 700 "$CCD_DIR"
 chmod 700 "$CLIENT_DIR"
 
 ensure_server_conf_has_ccd

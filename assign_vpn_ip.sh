@@ -4,7 +4,7 @@ set -euo pipefail
 CN="${1:?missing certificate CN}"
 
 CCD_DIR="/etc/openvpn/ccd"
-IPP_FILE="/etc/openvpn/ipp.txt"
+IPP_FILE="${OPENVPN_IPP_FILE:-}"
 LOCK_FILE="${CCD_DIR}/.assign.lock"
 
 SUBNET_PREFIX="${OPENVPN_SUBNET_PREFIX:-10.8.0}"
@@ -16,6 +16,16 @@ if [ "$(id -u)" -ne 0 ]; then
   echo "This script must be run as root or with sudo." >&2
   echo "Example: sudo bash $0 <client name>" >&2
   exit 1
+fi
+
+if [ -z "$IPP_FILE" ]; then
+  if [ -f "/etc/openvpn/server/ipp.txt" ]; then
+    IPP_FILE="/etc/openvpn/server/ipp.txt"
+  elif [ -f "/etc/openvpn/ipp.txt" ]; then
+    IPP_FILE="/etc/openvpn/ipp.txt"
+  else
+    IPP_FILE="/etc/openvpn/server/ipp.txt"
+  fi
 fi
 
 mkdir -p "$CCD_DIR"

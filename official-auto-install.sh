@@ -1011,6 +1011,7 @@ server 10.8.0.0 255.255.255.0" > "$OVPN_CONF"
 		echo 'server-ipv6 fddd:1194:1194:1194::/64' >> "$OVPN_CONF"
 	fi
 	echo 'push "redirect-gateway def1 ipv6 bypass-dhcp"' >> "$OVPN_CONF"
+	echo 'client-config-dir /etc/openvpn/ccd' >> "$OVPN_CONF"
 	echo 'ifconfig-pool-persist ipp.txt' >> "$OVPN_CONF"
 	create_dns_config
 	echo 'push "block-outside-dns"' >> "$OVPN_CONF"
@@ -1503,6 +1504,8 @@ if [[ ! -e "$OVPN_CONF" ]]; then
 	install_pkgs
 	install_easyrsa
 	create_pki_and_certs
+	mkdir -p /etc/openvpn/ccd
+	chmod 755 /etc/openvpn/ccd
 	create_server_config
 	update_sysctl
 	create_firewall_rules

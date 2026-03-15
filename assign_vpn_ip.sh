@@ -7,10 +7,10 @@ CCD_DIR="/etc/openvpn/ccd"
 IPP_FILE="${OPENVPN_IPP_FILE:-}"
 LOCK_FILE="${CCD_DIR}/.assign.lock"
 
-SUBNET_PREFIX="${OPENVPN_SUBNET_PREFIX:-10.8.0}"
+SUBNET_PREFIX="${OPENVPN_SUBNET_PREFIX:-172.22}"
 START_HOST="${OPENVPN_START_HOST:-10}"
 END_HOST="${OPENVPN_END_HOST:-254}"
-MASK="${OPENVPN_MASK:-255.255.255.0}"
+MASK="${OPENVPN_MASK:-255.255.0.0}"
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "This script must be run as root or with sudo." >&2
@@ -44,6 +44,35 @@ is_reserved_host() {
   [ "$host" -eq 0 ] || [ "$host" -eq 1 ] || [ "$host" -eq 255 ]
 }
 
+build_candidate_ips() {
+  local prefix_octets
+  IFS='.' read -r -a prefix_octets <<< "$SUBNET_PREFIX"
+
+  case "${#prefix_octets[@]}" in
+    2)
+      local third_octet
+      local host
+      for third_octet in $(seq 0 255); do
+        for host in $(seq "$START_HOST" "$END_HOST"); do
+          is_reserved_host "$host" && continue
+          printf '%s.%s.%s.%s\n' "${prefix_octets[0]}" "${prefix_octets[1]}" "$third_octet" "$host"
+        done
+      done
+      ;;
+    3)
+      local host
+      for host in $(seq "$START_HOST" "$END_HOST"); do
+        is_reserved_host "$host" && continue
+        printf '%s.%s.%s.%s\n' "${prefix_octets[0]}" "${prefix_octets[1]}" "${prefix_octets[2]}" "$host"
+      done
+      ;;
+    *)
+      echo "Unsupported OPENVPN_SUBNET_PREFIX: $SUBNET_PREFIX" >&2
+      exit 1
+      ;;
+  esac
+}
+
 is_ip_used() {
   local ip="$1"
 
@@ -58,17 +87,14 @@ is_ip_used() {
   return 1
 }
 
-for host in $(seq "$START_HOST" "$END_HOST"); do
-  is_reserved_host "$host" && continue
-  ip="${SUBNET_PREFIX}.${host}"
-
+while IFS= read -r ip; do
   if ! is_ip_used "$ip"; then
     printf 'ifconfig-push %s %s\n' "$ip" "$MASK" > "$CCD_FILE"
     chmod 644 "$CCD_FILE"
     echo "Assigned $CN -> $ip"
     exit 0
   fi
-done
+done < <(build_candidate_ips)
 
-echo "No free VPN IP available in ${SUBNET_PREFIX}.0/24" >&2
+echo "No free VPN IP available for prefix ${SUBNET_PREFIX} with mask ${MASK}" >&2
 exit 1

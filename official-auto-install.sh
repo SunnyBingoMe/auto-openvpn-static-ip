@@ -820,12 +820,12 @@ create_firewall_rules() {
 		# We don't use --add-service=openvpn because that would only work with
 		# the default port and protocol.
 		firewall-cmd -q --add-port="$port"/"$protocol"
-		firewall-cmd -q --zone=trusted --add-source=10.8.0.0/24
+		firewall-cmd -q --zone=trusted --add-source=172.22.0.0/16
 		firewall-cmd -q --permanent --add-port="$port"/"$protocol"
-		firewall-cmd -q --permanent --zone=trusted --add-source=10.8.0.0/24
+		firewall-cmd -q --permanent --zone=trusted --add-source=172.22.0.0/16
 		# Set NAT for the VPN subnet
-		firewall-cmd -q --direct --add-rule ipv4 nat POSTROUTING 0 -s 10.8.0.0/24 ! -d 10.8.0.0/24 -j MASQUERADE
-		firewall-cmd -q --permanent --direct --add-rule ipv4 nat POSTROUTING 0 -s 10.8.0.0/24 ! -d 10.8.0.0/24 -j MASQUERADE
+		firewall-cmd -q --direct --add-rule ipv4 nat POSTROUTING 0 -s 172.22.0.0/16 ! -d 172.22.0.0/16 -j MASQUERADE
+		firewall-cmd -q --permanent --direct --add-rule ipv4 nat POSTROUTING 0 -s 172.22.0.0/16 ! -d 172.22.0.0/16 -j MASQUERADE
 		if [[ -n "$ip6" ]]; then
 			firewall-cmd -q --zone=trusted --add-source=fddd:1194:1194:1194::/64
 			firewall-cmd -q --permanent --zone=trusted --add-source=fddd:1194:1194:1194::/64
@@ -847,13 +847,13 @@ After=network-online.target
 Wants=network-online.target
 [Service]
 Type=oneshot
-ExecStart=$iptables_path -w 5 -t nat -A POSTROUTING -s 10.8.0.0/24 ! -d 10.8.0.0/24 -j MASQUERADE
+ExecStart=$iptables_path -w 5 -t nat -A POSTROUTING -s 172.22.0.0/16 ! -d 172.22.0.0/16 -j MASQUERADE
 ExecStart=$iptables_path -w 5 -I INPUT -p $protocol --dport $port -j ACCEPT
-ExecStart=$iptables_path -w 5 -I FORWARD -s 10.8.0.0/24 -j ACCEPT
+ExecStart=$iptables_path -w 5 -I FORWARD -s 172.22.0.0/16 -j ACCEPT
 ExecStart=$iptables_path -w 5 -I FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
-ExecStop=$iptables_path -w 5 -t nat -D POSTROUTING -s 10.8.0.0/24 ! -d 10.8.0.0/24 -j MASQUERADE
+ExecStop=$iptables_path -w 5 -t nat -D POSTROUTING -s 172.22.0.0/16 ! -d 172.22.0.0/16 -j MASQUERADE
 ExecStop=$iptables_path -w 5 -D INPUT -p $protocol --dport $port -j ACCEPT
-ExecStop=$iptables_path -w 5 -D FORWARD -s 10.8.0.0/24 -j ACCEPT
+ExecStop=$iptables_path -w 5 -D FORWARD -s 172.22.0.0/16 -j ACCEPT
 ExecStop=$iptables_path -w 5 -D FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT" > /etc/systemd/system/openvpn-iptables.service
 		if [[ -n "$ip6" ]]; then
 			echo "ExecStart=$ip6tables_path -w 5 -t nat -A POSTROUTING -s fddd:1194:1194:1194::/64 ! -d fddd:1194:1194:1194::/64 -j MASQUERADE
@@ -877,14 +877,14 @@ remove_firewall_rules() {
 	port=$(grep '^port ' "$OVPN_CONF" | cut -d " " -f 2)
 	protocol=$(grep '^proto ' "$OVPN_CONF" | cut -d " " -f 2)
 	if systemctl is-active --quiet firewalld.service; then
-		ip=$(firewall-cmd --direct --get-rules ipv4 nat POSTROUTING | grep '\-s 10.8.0.0/24 '"'"'!'"'"' -d 10.8.0.0/24' | grep -oE '[^ ]+$')
+		ip=$(firewall-cmd --direct --get-rules ipv4 nat POSTROUTING | grep '\-s 172.22.0.0/16 '"'"'!'"'"' -d 172.22.0.0/16' | grep -oE '[^ ]+$')
 		# Using both permanent and not permanent rules to avoid a firewalld reload.
 		firewall-cmd -q --remove-port="$port"/"$protocol"
-		firewall-cmd -q --zone=trusted --remove-source=10.8.0.0/24
+		firewall-cmd -q --zone=trusted --remove-source=172.22.0.0/16
 		firewall-cmd -q --permanent --remove-port="$port"/"$protocol"
-		firewall-cmd -q --permanent --zone=trusted --remove-source=10.8.0.0/24
-		firewall-cmd -q --direct --remove-rule ipv4 nat POSTROUTING 0 -s 10.8.0.0/24 ! -d 10.8.0.0/24 -j MASQUERADE
-		firewall-cmd -q --permanent --direct --remove-rule ipv4 nat POSTROUTING 0 -s 10.8.0.0/24 ! -d 10.8.0.0/24 -j MASQUERADE
+		firewall-cmd -q --permanent --zone=trusted --remove-source=172.22.0.0/16
+		firewall-cmd -q --direct --remove-rule ipv4 nat POSTROUTING 0 -s 172.22.0.0/16 ! -d 172.22.0.0/16 -j MASQUERADE
+		firewall-cmd -q --permanent --direct --remove-rule ipv4 nat POSTROUTING 0 -s 172.22.0.0/16 ! -d 172.22.0.0/16 -j MASQUERADE
 		if grep -qs "server-ipv6" "$OVPN_CONF"; then
 			ip6=$(firewall-cmd --direct --get-rules ipv6 nat POSTROUTING | grep '\-s fddd:1194:1194:1194::/64 '"'"'!'"'"' -d fddd:1194:1194:1194::/64' | grep -oE '[^ ]+$')
 			firewall-cmd -q --zone=trusted --remove-source=fddd:1194:1194:1194::/64
@@ -1002,7 +1002,7 @@ dh dh.pem
 auth SHA256
 tls-crypt tc.key
 topology subnet
-server 10.8.0.0 255.255.255.0" > "$OVPN_CONF"
+server 172.22.0.0 255.255.0.0" > "$OVPN_CONF"
 	# IPv6
 	if [[ -z "$ip6" ]]; then
 		echo 'push "block-ipv6"' >> "$OVPN_CONF"
@@ -1158,7 +1158,7 @@ ignore-unknown-option block-outside-dns block-ipv6
 pull-filter ignore redirect-gateway
 pull-filter ignore dhcp-option DNS
 route-nopull
-route 10.8.0.0 255.255.255.0
+route 172.22.0.0 255.255.0.0
 verb 3" > /etc/openvpn/server/client-common.txt
 }
 

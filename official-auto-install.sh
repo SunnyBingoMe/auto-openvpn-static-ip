@@ -1155,6 +1155,10 @@ remote-cert-tls server
 auth SHA256
 cipher AES-128-GCM
 ignore-unknown-option block-outside-dns block-ipv6
+pull-filter ignore redirect-gateway
+pull-filter ignore dhcp-option DNS
+route-nopull
+route 10.8.0.0 255.255.255.0
 verb 3" > /etc/openvpn/server/client-common.txt
 }
 

@@ -3,7 +3,7 @@ set -euo pipefail
 
 CN="${1:?missing certificate CN}"
 
-CCD_DIR="/etc/openvpn/ccd"
+CCD_DIR="${OPENVPN_CCD_DIR:-/etc/openvpn/ccd-udp}"
 IPP_FILE="${OPENVPN_IPP_FILE:-}"
 LOCK_FILE="${CCD_DIR}/.assign.lock"
 
@@ -29,12 +29,14 @@ fi
 validate_client_name
 
 if [ -z "$IPP_FILE" ]; then
-  if [ -f "/etc/openvpn/server/ipp.txt" ]; then
+  if [ -f "/etc/openvpn/server/ipp-udp.txt" ]; then
+    IPP_FILE="/etc/openvpn/server/ipp-udp.txt"
+  elif [ -f "/etc/openvpn/server/ipp.txt" ]; then
     IPP_FILE="/etc/openvpn/server/ipp.txt"
   elif [ -f "/etc/openvpn/ipp.txt" ]; then
     IPP_FILE="/etc/openvpn/ipp.txt"
   else
-    IPP_FILE="/etc/openvpn/server/ipp.txt"
+    IPP_FILE="/etc/openvpn/server/ipp-udp.txt"
   fi
 fi
 

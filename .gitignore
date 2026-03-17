@@ -1,0 +1,360 @@
+
+#OBS: no inline comment !!! and make sure no extra spaces after each record !
+
+# to include #
+######################
+!.gitignore
+!.gitignore_global
+!.vimrc
+!.bash_aliases
+!.bashrc
+!.rsyncignore
+!.gitconfig
+
+
+# =============================================================================
+# sunny special
+# =============================================================================
+test-tmp*
+test_tmp*
+sunny-tmp*
+sunny_tmp*
+
+# =============================================================================
+# AI
+# =============================================================================
+rate-limit-fallback.json
+
+# =============================================================================
+# LaTeX 编译辅助文件
+# =============================================================================
+# LaTeX 缓存目录
+.latex-cache/
+
+# LaTeX 通用辅助文件
+*.aux
+*.log
+*.out
+*.toc
+*.lof
+*.lot
+*.bbl
+*.blg
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+*.bcf
+*.run.xml
+*.nav
+*.snm
+*.vrb
+
+# Latexmk
+*.latexmk
+*.latexmkrc
+
+# =============================================================================
+# LaTeX 系统文件
+# =============================================================================
+
+# Skill workspaces (runtime artifacts)
+skills/transfer_old_latex_to_new/runs/
+skills/complete_example/runs/
+skills/nsfc-justification-writer/.cache/
+skills/nsfc-justification-writer/**/__pycache__/
+
+# complete_example 项目级工作空间（每个项目的隐藏目录）
+projects/**/.complete_example/
+
+# nsfc-qc 项目级工作空间（只读 QC 中间文件与报告）
+projects/**/.nsfc-qc/
+
+# complete_example / format guard runtime artifacts
+.format_hashes.json
+projects/**/.format_hashes.json
+.AppleDouble
+.LSOverride
+
+# Linux
+.directory
+
+# =============================================================================
+# 编辑器 Editor/IDE 临时文件
+# =============================================================================
+
+.obsidian/workspace.json
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# VSCode
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+
+# =============================================================================
+# 临时文件
+# =============================================================================
+
+*.tmp
+*.temp
+
+# =============================================================================
+# 项目特定
+# =============================================================================
+
+# 保留 workspace 配置（移除原有忽略规则）
+# *.code-workspace  <-- 已删除此行
+
+# 备份文件
+*.bak
+*.backup
+*.orig
+
+# =============================================================================
+# make_latex_model 等技能特定
+# =============================================================================
+
+# 项目级工作空间（中间文件）
+
+# 技能输出目录（保留 README）
+skills/*/output/*.json
+skills/*/output/*.log
+!skills/*/output/README.md
+
+# 测试工作空间
+skills/*/tests/*/workspace/
+skills/*/tests/*/.test_summary.txt
+
+# PDF 分析临时文件
+skills/*/scripts/*_analysis.json
+
+# 旧的技能级工作空间（逐步弃用；已跟踪的文件不受影响）
+skills/*/workspace/
+
+# =============================================================================
+# 环境变量和密钥（安全）
+# =============================================================================
+.env
+.env.local
+.env.*.local
+
+# =============================================================================
+# macOS 补充（增强）
+# =============================================================================
+.DS_Store*
+._*
+projects/NSFC_General/template/~$26年最新word模板-1.面上项目-正文.doc
+test.md
+
+# =============================================================================
+# 计划与测试文档（可追溯记录，建议纳入版本控制）
+# =============================================================================
+# 可选：忽略会话中的中间产物目录（不影响 TEST_PLAN/TEST_REPORT 等主文档）
+**/tests/**/_artifacts/
+**/tests/**/_scripts/
+# 默认忽略各 skill 的 auto-test-skill 会话 plans/tests（避免污染仓库）；需要纳入版本控制的 skill 再显式放行
+skills/*/plans/
+skills/*/tests/
+/tests/
+
+
+
+# OS generated files #
+######################
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+Icon?
+.Spotlight-V100
+.Trashes
+.stignore
+.stfolder/
+
+# log & tmp files #
+####################
+*.log
+*.opendb
+*.diff
+.fuse_hidden*
+
+# vim
+*.swp
+*.swo
+*.swn
+.*.sw*
+
+#Compiled source #
+###################
+*.com
+*.class
+*.dll
+*.exe
+*.o
+*.a
+
+# C extensions
+*.so
+
+# Python Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# osm? cache
+*/cache/*.json
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+#  Usually these files are written by a python script from a template
+#  before PyInstaller builds the exe, so as to inject date/other infos into it.
+*.manifest
+#*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+local_settings.py
+#db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+.virtual_documents/
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+#   For a library or package, you might want to ignore these files since the code is
+#   intended to run in multiple environments; otherwise, check them in:
+# .python-version
+
+# pipenv
+#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
+#   However, in case of collaboration, if having platform-specific dependencies or dependencies
+#   having no cross-platform support, pipenv may install dependencies that don't work, or not
+#   install all needed dependencies.
+#Pipfile.lock
+
+# PEP 582; used by e.g. github.com/David-OConnor/pyflow
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Python Environments
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+condaEnvWin/
+condaEnvNix/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# JetBrains
+.idea/
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# npm
+#node_modules/
+package-lock.json
+#package.json
+
+# PyTorch Lightning
+lightning_logs/
+
+# Scripts
+#scripts/

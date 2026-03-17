@@ -155,6 +155,10 @@ find_generated_profile() {
   return 1
 }
 
+extract_generated_profile_from_output() {
+  awk -F': ' '/Configuration available in: / { path=$2 } END { if (path != "") print path }'
+}
+
 resolve_client_dir() {
   local user_home=""
 
@@ -219,6 +223,9 @@ rewrite_profile_for_protocol() {
   local target_file="$2"
   local server_conf="$3"
   local peer_server_conf="$4"
+  local target_dir
+  local target_name
+  local tmp_file
   local remote_host
   local remote_port
   local local_route_network
@@ -242,6 +249,9 @@ rewrite_profile_for_protocol() {
   local_route_mask="$(awk '$1 == "server" { print $3; exit }' "$server_conf")"
   peer_route_network="$(awk '$1 == "server" { print $2; exit }' "$peer_server_conf")"
   peer_route_mask="$(awk '$1 == "server" { print $3; exit }' "$peer_server_conf")"
+  target_dir="$(dirname "$target_file")"
+  target_name="$(basename "$target_file")"
+  tmp_file="$(mktemp "${target_dir}/${target_name}.tmp.XXXXXX")"
 
   awk -v proto="$PROFILE_PROTO" \
       -v remote_host="$remote_host" \
@@ -270,7 +280,15 @@ rewrite_profile_for_protocol() {
         print "route " peer_route_network " " peer_route_mask
       }
     }
-  ' > "$target_file"
+  ' > "$tmp_file" || {
+    rm -f "$tmp_file"
+    exit 1
+  }
+
+  mv -f "$tmp_file" "$target_file" || {
+    rm -f "$tmp_file"
+    exit 1
+  }
 }
 
 parse_args "$@"
@@ -325,10 +343,15 @@ fi
 mkdir -p "$CLIENT_DIR"
 mkdir -p "$UDP_CCD_DIR" "$TCP_CCD_DIR"
 
+INSTALL_OUTPUT=""
 if [ -f "${SERVER_DIR}/easy-rsa/pki/issued/${CN}.crt" ]; then
-  bash "$INSTALL_SCRIPT" --exportclient "$CN"
+  INSTALL_OUTPUT="$(bash "$INSTALL_SCRIPT" --exportclient "$CN")"
 else
-  bash "$INSTALL_SCRIPT" --addclient "$CN"
+  INSTALL_OUTPUT="$(bash "$INSTALL_SCRIPT" --addclient "$CN")"
+fi
+
+if [ -n "$INSTALL_OUTPUT" ]; then
+  printf '%s\n' "$INSTALL_OUTPUT"
 fi
 
 if [ "$PROFILE_PROTO" = "tcp" ]; then
@@ -343,7 +366,10 @@ else
     "$ASSIGN_SCRIPT" "$CN"
 fi
 
-PROFILE_SOURCE="$(find_generated_profile || true)"
+PROFILE_SOURCE="$(printf '%s\n' "$INSTALL_OUTPUT" | extract_generated_profile_from_output || true)"
+if [ -z "$PROFILE_SOURCE" ] || [ ! -f "$PROFILE_SOURCE" ]; then
+  PROFILE_SOURCE="$(find_generated_profile || true)"
+fi
 if [ -z "$PROFILE_SOURCE" ]; then
   echo "client profile not found after creation: ${CN}.ovpn" >&2
   exit 1

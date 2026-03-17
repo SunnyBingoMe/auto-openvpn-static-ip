@@ -386,13 +386,13 @@ if [ -n "${SUDO_USER:-}" ] && getent group "$SUDO_USER" >/dev/null 2>&1; then
   chown "$SUDO_USER:$SUDO_USER" "$PROFILE_TARGET"
 fi
 
-echo "Created client cert, CCD, and profile for ${CN}"
-echo "Profile protocol: ${PROFILE_PROTO}"
-echo "Install script: ${INSTALL_SCRIPT}"
-echo "Assign script: ${ASSIGN_SCRIPT}"
+echo "Created client cert in profile-config-file, also CCD, for: ${CN}"
+echo "OVPN: ${PROFILE_TARGET}"
+#echo "Profile protocol: ${PROFILE_PROTO}"
+#echo "Install script: ${INSTALL_SCRIPT}"
+#echo "Assign script: ${ASSIGN_SCRIPT}"
 if [ "$PROFILE_PROTO" = "tcp" ]; then
   echo "CCD: ${TCP_CCD_DIR}/${CN}"
 else
   echo "CCD: ${UDP_CCD_DIR}/${CN}"
 fi
-echo "OVPN: ${PROFILE_TARGET}"

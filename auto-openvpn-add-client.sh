@@ -32,7 +32,7 @@ parse_args() {
         ;;
       --help|-h)
         cat <<'EOF'
-Usage: create_ovpn_client.sh [--proto udp|tcp] <client-name>
+Usage: auto-openvpn-add-client.sh [--proto udp|tcp] <client-name>
 EOF
         exit 0
         ;;
@@ -94,13 +94,13 @@ find_install_script() {
     return 0
   fi
 
-  if [ -f "${SCRIPT_DIR}/official-auto-install.sh" ]; then
-    printf '%s\n' "${SCRIPT_DIR}/official-auto-install.sh"
+  if [ -f "${SCRIPT_DIR}/to-get-from-hwdsl2.sh" ]; then
+    printf '%s\n' "${SCRIPT_DIR}/to-get-from-hwdsl2.sh"
     return 0
   fi
 
-  if [ -f "/etc/openvpn/server/official-auto-install.sh" ]; then
-    printf '%s\n' "/etc/openvpn/server/official-auto-install.sh"
+  if [ -f "/etc/openvpn/server/to-get-from-hwdsl2.sh" ]; then
+    printf '%s\n' "/etc/openvpn/server/to-get-from-hwdsl2.sh"
     return 0
   fi
 
@@ -113,13 +113,13 @@ find_assign_script() {
     return 0
   fi
 
-  if [ -f "${SCRIPT_DIR}/assign_vpn_ip.sh" ]; then
-    printf '%s\n' "${SCRIPT_DIR}/assign_vpn_ip.sh"
+  if [ -f "${SCRIPT_DIR}/to-assign-ip-to-client.sh" ]; then
+    printf '%s\n' "${SCRIPT_DIR}/to-assign-ip-to-client.sh"
     return 0
   fi
 
-  if [ -f "/etc/openvpn/server/assign_vpn_ip.sh" ]; then
-    printf '%s\n' "/etc/openvpn/server/assign_vpn_ip.sh"
+  if [ -f "/etc/openvpn/server/to-assign-ip-to-client.sh" ]; then
+    printf '%s\n' "/etc/openvpn/server/to-assign-ip-to-client.sh"
     return 0
   fi
 
@@ -315,8 +315,8 @@ ASSIGN_SCRIPT="$(find_assign_script || true)"
 if [ -z "$INSTALL_SCRIPT" ]; then
   echo "install script not found" >&2
   echo "Looked in:" >&2
-  echo "  ${SCRIPT_DIR}/official-auto-install.sh" >&2
-  echo "  /etc/openvpn/server/official-auto-install.sh" >&2
+  echo "  ${SCRIPT_DIR}/to-get-from-hwdsl2.sh" >&2
+  echo "  /etc/openvpn/server/to-get-from-hwdsl2.sh" >&2
   echo "You can also set OPENVPN_INSTALL_SCRIPT." >&2
   exit 1
 fi
@@ -324,8 +324,8 @@ fi
 if [ -z "$ASSIGN_SCRIPT" ]; then
   echo "assign script not found" >&2
   echo "Looked in:" >&2
-  echo "  ${SCRIPT_DIR}/assign_vpn_ip.sh" >&2
-  echo "  /etc/openvpn/server/assign_vpn_ip.sh" >&2
+  echo "  ${SCRIPT_DIR}/to-assign-ip-to-client.sh" >&2
+  echo "  /etc/openvpn/server/to-assign-ip-to-client.sh" >&2
   echo "You can also set OPENVPN_ASSIGN_SCRIPT." >&2
   exit 1
 fi

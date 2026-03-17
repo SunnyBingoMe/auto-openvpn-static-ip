@@ -20,14 +20,14 @@ UDP_IPP_FILE="${SERVER_DIR}/ipp-udp.txt"
 TCP_IPP_FILE="${SERVER_DIR}/ipp-tcp.txt"
 CLIENT_COMMON_FILE="${SERVER_DIR}/client-common-udp-tcp.txt"
 
-ASSIGN_SOURCE="${SCRIPT_DIR}/assign_vpn_ip.sh"
-CLIENT_SOURCE="${SCRIPT_DIR}/create_ovpn_client.sh"
-INSTALL_SOURCE="${SCRIPT_DIR}/official-auto-install.sh"
+ASSIGN_SOURCE="${SCRIPT_DIR}/to-assign-ip-to-client.sh"
+CLIENT_SOURCE="${SCRIPT_DIR}/auto-openvpn-add-client.sh"
+INSTALL_SOURCE="${SCRIPT_DIR}/to-get-from-hwdsl2.sh"
 
-ASSIGN_TARGET="${SERVER_DIR}/assign_vpn_ip.sh"
-CLIENT_TARGET="${SERVER_DIR}/create_ovpn_client.sh"
-INSTALL_TARGET="${SERVER_DIR}/official-auto-install.sh"
-CLIENT_LINK="/usr/local/sbin/create_ovpn_client.sh"
+ASSIGN_TARGET="${SERVER_DIR}/to-assign-ip-to-client.sh"
+CLIENT_TARGET="${SERVER_DIR}/auto-openvpn-add-client.sh"
+INSTALL_TARGET="${SERVER_DIR}/to-get-from-hwdsl2.sh"
+CLIENT_LINK="/usr/local/sbin/auto-openvpn-add-client.sh"
 
 require_root() {
   if [ "$(id -u)" -eq 0 ]; then

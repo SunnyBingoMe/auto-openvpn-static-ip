@@ -7,14 +7,14 @@
 ```bash
 git clone https://github.com/SunnyBingoMe/auto-openvpn-static-ip.git
 cd auto-openvpn-static-ip
-sudo sh ./install.sh
+sudo sh ./install-auto-openvpn.sh
 ```
 
 ## 效果
 
-- 运行 `bash install.sh` 时，如果当前用户不是 root 但可以使用 `sudo`，脚本会自动提权继续执行。
+- 运行 `bash install-auto-openvpn.sh` 时，如果当前用户不是 root 但可以使用 `sudo`，脚本会自动提权继续执行。
 - 安装完成后，OpenVPN 服务端配置和辅助脚本会放到 `/etc/openvpn` 体系下。
-- 运行 `sudo create_ovpn_client.sh my_client_name` 时，会自动：
+- 运行 `sudo auto-openvpn-add-client.sh my_client_name` 时，会自动：
   - 创建客户端证书和 `.ovpn` 配置文件
   - 为该客户端生成 CCD 文件
   - 自动分配一个静态 VPN IP
@@ -29,25 +29,25 @@ sudo sh ./install.sh
 - `/etc/openvpn/server/server-udp.conf`：UDP OpenVPN 服务端配置
 - `/etc/openvpn/server/server-tcp.conf`：TCP OpenVPN 服务端配置
 - `/etc/openvpn/server/client-common-udp-tcp.txt`：UDP/TCP 通用客户端模板
-- `/etc/openvpn/server/official-auto-install.sh`：上游安装/客户端管理脚本
-- `/etc/openvpn/server/create_ovpn_client.sh`：客户端创建脚本
-- `/etc/openvpn/server/assign_vpn_ip.sh`：CCD 静态 IP 分配脚本
+- `/etc/openvpn/server/to-get-from-hwdsl2.sh`：上游安装/客户端管理脚本
+- `/etc/openvpn/server/auto-openvpn-add-client.sh`：客户端创建脚本
+- `/etc/openvpn/server/to-assign-ip-to-client.sh`：CCD 静态 IP 分配脚本
 - `/etc/openvpn/ccd-udp`：UDP 客户端 CCD 目录
 - `/etc/openvpn/ccd-tcp`：TCP 客户端 CCD 目录
 - `/etc/openvpn/client-udp-tcp`：未通过普通用户 `sudo` 调用时的 `.ovpn` 默认回退目录
-- `/usr/local/sbin/create_ovpn_client.sh`：便于直接调用的命令入口
+- `/usr/local/sbin/auto-openvpn-add-client.sh`：便于直接调用的命令入口
 
 ## 使用方式
 
 ### 1. 安装 OpenVPN
 
 ```bash
-bash install.sh
+bash install-auto-openvpn.sh
 ```
 
 安装脚本会：
 
-- 调用 `official-auto-install.sh --auto` 进行无人值守安装
+- 调用 `to-get-from-hwdsl2.sh --auto` 进行无人值守安装
 - 把上游默认生成的 `server.conf` 收敛为显式命名的 `server-udp.conf`，并保留兼容软链
 - 基于 `server-udp.conf` 额外生成 `server-tcp.conf`，把 TCP 实例放到独立的 `172.23.0.0/16` 地址池和 `/etc/openvpn/ccd-tcp`，并启动 `openvpn-server@server-udp.service` 与 `openvpn-server@server-tcp.service`
 - 自动向 UDP 客户端推送 `172.23.0.0/16` 路由，向 TCP 客户端推送 `172.22.0.0/16` 路由
@@ -61,20 +61,20 @@ bash install.sh
 默认导出 UDP 客户端：
 
 ```bash
-sudo create_ovpn_client.sh my_client_name
+sudo auto-openvpn-add-client.sh my_client_name
 ```
 
 显式导出 TCP 客户端：
 
 ```bash
-sudo create_ovpn_client.sh --proto tcp my_client_name
+sudo auto-openvpn-add-client.sh --proto tcp my_client_name
 ```
 
 执行后会：
 
-- 当客户端证书不存在时，调用 `/etc/openvpn/server/official-auto-install.sh --addclient my_client_name`
-- 当客户端证书已存在时，调用 `/etc/openvpn/server/official-auto-install.sh --exportclient my_client_name`
-- 调用 `/etc/openvpn/server/assign_vpn_ip.sh my_client_name`
+- 当客户端证书不存在时，调用 `/etc/openvpn/server/to-get-from-hwdsl2.sh --addclient my_client_name`
+- 当客户端证书已存在时，调用 `/etc/openvpn/server/to-get-from-hwdsl2.sh --exportclient my_client_name`
+- 调用 `/etc/openvpn/server/to-assign-ip-to-client.sh my_client_name`
 - 在 `/etc/openvpn/ccd-udp/my_client_name` 写入类似下面的内容：
 
 ```conf
@@ -117,10 +117,10 @@ route 172.22.0.0 255.255.0.0
 
 ## 权限说明
 
-- `install.sh` 和 `create_ovpn_client.sh` 都支持在非 root 用户下通过 `sudo` 执行。
-- `/etc/openvpn/server/create_ovpn_client.sh`
-- `/etc/openvpn/server/assign_vpn_ip.sh`
-- `/etc/openvpn/server/official-auto-install.sh`
+- `install-auto-openvpn.sh` 和 `auto-openvpn-add-client.sh` 都支持在非 root 用户下通过 `sudo` 执行。
+- `/etc/openvpn/server/auto-openvpn-add-client.sh`
+- `/etc/openvpn/server/to-assign-ip-to-client.sh`
+- `/etc/openvpn/server/to-get-from-hwdsl2.sh`
 - `/etc/openvpn/ccd-udp`
 
 以上脚本和 CCD 目录安装后会设置为仅 root 可访问。
@@ -146,7 +146,7 @@ route 172.22.0.0 255.255.0.0
 
 ## 备注
 
-- 本仓库基于 `official-auto-install.sh` 提供 OpenVPN 安装与客户端证书生成能力。
+- 本仓库基于 `to-get-from-hwdsl2.sh` 提供 OpenVPN 安装与客户端证书生成能力。
 - 本仓库额外补上了 CCD 目录、静态 IP 分配和脚本部署逻辑。
 - 当前默认 VPN 子网为 `172.22.0.0/16`。
 - 旧版本生成的 `.ovpn` 文件和旧的 `/etc/openvpn/ccd-udp/*` 条目不会自动迁移到新网段；升级已有服务器后，需要按需手动更新旧客户端配置和旧 CCD 静态地址。
@@ -188,8 +188,8 @@ sudo sed -i 's/10\.8\./172.22./g' /etc/openvpn/server/ipp-udp.txt
 旧版本生成的 `.ovpn` 文件里仍可能保留旧路由或旧访问假设。建议为仍在使用的客户端重新生成：
 
 ```bash
-sudo create_ovpn_client.sh my_client_name
-sudo create_ovpn_client.sh --proto tcp my_client_name
+sudo auto-openvpn-add-client.sh my_client_name
+sudo auto-openvpn-add-client.sh --proto tcp my_client_name
 ```
 
 新生成的配置会默认使用：
@@ -211,5 +211,5 @@ sudo systemctl restart openvpn-server@server-tcp.service
 
 ```bash
 bash tests/dual_protocol_contract.sh
-bash -n install.sh create_ovpn_client.sh assign_vpn_ip.sh official-auto-install.sh
+bash -n install-auto-openvpn.sh auto-openvpn-add-client.sh to-assign-ip-to-client.sh to-get-from-hwdsl2.sh
 ```

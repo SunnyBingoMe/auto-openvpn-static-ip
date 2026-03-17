@@ -335,8 +335,8 @@ if [ ! -f "$INSTALL_SCRIPT" ]; then
   exit 1
 fi
 
-if [ ! -x "$ASSIGN_SCRIPT" ]; then
-  echo "assign script not found or not executable: $ASSIGN_SCRIPT" >&2
+if [ ! -r "$ASSIGN_SCRIPT" ]; then
+  echo "assign script not found or not readable: $ASSIGN_SCRIPT" >&2
   exit 1
 fi
 
@@ -359,11 +359,11 @@ if [ "$PROFILE_PROTO" = "tcp" ]; then
     OPENVPN_SUBNET_PREFIX="$TCP_SUBNET_PREFIX" \
     OPENVPN_MASK="$TCP_MASK" \
     OPENVPN_IPP_FILE="$TCP_IPP_FILE" \
-    "$ASSIGN_SCRIPT" "$CN"
+    bash "$ASSIGN_SCRIPT" "$CN"
 else
   OPENVPN_CCD_DIR="$UDP_CCD_DIR" \
     OPENVPN_IPP_FILE="$UDP_IPP_FILE" \
-    "$ASSIGN_SCRIPT" "$CN"
+    bash "$ASSIGN_SCRIPT" "$CN"
 fi
 
 PROFILE_SOURCE="$(printf '%s\n' "$INSTALL_OUTPUT" | extract_generated_profile_from_output || true)"

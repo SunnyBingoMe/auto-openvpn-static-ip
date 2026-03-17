@@ -22,12 +22,15 @@ CLIENT_COMMON_FILE="${SERVER_DIR}/client-common-udp-tcp.txt"
 
 ASSIGN_SOURCE="${SCRIPT_DIR}/to-assign-ip-to-client.sh"
 CLIENT_SOURCE="${SCRIPT_DIR}/auto-openvpn-add-client.sh"
+REVOKE_SOURCE="${SCRIPT_DIR}/auto-openvpn-revoke-client.sh"
 INSTALL_SOURCE="${SCRIPT_DIR}/to-get-from-hwdsl2.sh"
 
 ASSIGN_TARGET="${SERVER_DIR}/to-assign-ip-to-client.sh"
 CLIENT_TARGET="${SERVER_DIR}/auto-openvpn-add-client.sh"
+REVOKE_TARGET="${SERVER_DIR}/auto-openvpn-revoke-client.sh"
 INSTALL_TARGET="${SERVER_DIR}/to-get-from-hwdsl2.sh"
 CLIENT_LINK="/usr/local/sbin/auto-openvpn-add-client.sh"
+REVOKE_LINK="/usr/local/sbin/auto-openvpn-revoke-client.sh"
 
 require_root() {
   if [ "$(id -u)" -eq 0 ]; then
@@ -299,7 +302,7 @@ restart_openvpn() {
 
 require_root "$@"
 
-for required_file in "$ASSIGN_SOURCE" "$CLIENT_SOURCE" "$INSTALL_SOURCE"; do
+for required_file in "$ASSIGN_SOURCE" "$CLIENT_SOURCE" "$REVOKE_SOURCE" "$INSTALL_SOURCE"; do
   if [ ! -f "$required_file" ]; then
     echo "Required file not found: $required_file" >&2
     exit 1
@@ -314,6 +317,7 @@ mkdir -p "$SERVER_DIR" "$UDP_CCD_DIR" "$TCP_CCD_DIR" "$CLIENT_DIR"
 
 deploy_file "$INSTALL_SOURCE" "$INSTALL_TARGET" 700
 deploy_file "$CLIENT_SOURCE" "$CLIENT_TARGET" 700
+deploy_file "$REVOKE_SOURCE" "$REVOKE_TARGET" 700
 deploy_file "$ASSIGN_SOURCE" "$ASSIGN_TARGET" 700
 
 ensure_common_artifact_names
@@ -332,6 +336,7 @@ ensure_initial_client_ccd
 restart_openvpn
 
 ln -sfn "$CLIENT_TARGET" "$CLIENT_LINK"
+ln -sfn "$REVOKE_TARGET" "$REVOKE_LINK"
 
 echo "OpenVPN install completed."
 echo "Server config: $SERVER_CONF"
@@ -340,3 +345,4 @@ echo "UDP CCD dir: $UDP_CCD_DIR"
 echo "TCP CCD dir: $TCP_CCD_DIR"
 echo "Client profiles dir: $CLIENT_DIR"
 echo "Client creation command: $CLIENT_LINK [--proto udp|tcp] <client-name>"
+echo "Client revocation command: $REVOKE_LINK <client-name>"

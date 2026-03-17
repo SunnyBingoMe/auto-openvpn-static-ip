@@ -386,7 +386,7 @@ if [ -n "${SUDO_USER:-}" ] && getent group "$SUDO_USER" >/dev/null 2>&1; then
   chown "$SUDO_USER:$SUDO_USER" "$PROFILE_TARGET"
 fi
 
-echo "Created client cert in profile-config-file, also CCD, for: ${CN}"
+#echo "Created client cert in profile-config-file, also CCD, for: ${CN}"
 echo "OVPN: ${PROFILE_TARGET}"
 #echo "Profile protocol: ${PROFILE_PROTO}"
 #echo "Install script: ${INSTALL_SCRIPT}"

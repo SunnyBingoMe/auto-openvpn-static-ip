@@ -1235,7 +1235,8 @@ build_client_config() {
 
 print_client_action() {
 	echo
-	echo "$client $1. Configuration available in: $export_dir$client.ovpn"
+	echo "$client $1".
+	#echo "temp config: $export_dir$client.ovpn"
 }
 
 print_check_clients() {

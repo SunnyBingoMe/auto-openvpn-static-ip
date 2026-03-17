@@ -1235,7 +1235,7 @@ build_client_config() {
 
 print_client_action() {
 	echo
-	echo "$client $1".
+	echo "Status: $client $1".
 	#echo "temp config: $export_dir$client.ovpn"
 }
 

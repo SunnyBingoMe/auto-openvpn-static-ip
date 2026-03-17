@@ -280,7 +280,7 @@ rewrite_profile_for_protocol() {
         print "route " peer_route_network " " peer_route_mask
       }
     }
-  ' > "$tmp_file" || {
+  ' "$source_file" > "$tmp_file" || {
     rm -f "$tmp_file"
     exit 1
   }

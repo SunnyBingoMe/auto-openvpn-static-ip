@@ -1015,6 +1015,8 @@ server 172.22.0.0 255.255.0.0" > "$OVPN_CONF"
 	echo 'ifconfig-pool-persist ipp.txt' >> "$OVPN_CONF"
 	create_dns_config
 	echo 'push "block-outside-dns"' >> "$OVPN_CONF"
+	echo 'script-security 2' >> "$OVPN_CONF"
+	echo 'auth-user-pass-verify /etc/openvpn/server/openvpn-pwd-auth-verify.sh via-file' >> "$OVPN_CONF"
 	echo "keepalive 10 120
 cipher AES-128-GCM
 user nobody
@@ -1151,6 +1153,7 @@ resolv-retry infinite
 nobind
 persist-key
 persist-tun
+auth-user-pass
 remote-cert-tls server
 auth SHA256
 cipher AES-128-GCM

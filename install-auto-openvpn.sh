@@ -19,6 +19,8 @@ EXTRA_FIREWALL_SERVICE="/etc/systemd/system/openvpn-iptables-udp-tcp-extra.servi
 UDP_IPP_FILE="${SERVER_DIR}/ipp-udp.txt"
 TCP_IPP_FILE="${SERVER_DIR}/ipp-tcp.txt"
 CLIENT_COMMON_FILE="${SERVER_DIR}/client-common-udp-tcp.txt"
+PWD_AUTH_DIR="${SERVER_DIR}/client-pwd-auth"
+PWD_AUTH_VERIFY_SCRIPT="${SERVER_DIR}/openvpn-pwd-auth-verify.sh"
 
 ASSIGN_SOURCE="${SCRIPT_DIR}/to-assign-ip-to-client.sh"
 CLIENT_SOURCE="${SCRIPT_DIR}/auto-openvpn-add-client.sh"
@@ -83,6 +85,43 @@ ensure_conf_has_line() {
   fi
 }
 
+deploy_pwd_auth_verify_script() {
+  cat > "$PWD_AUTH_VERIFY_SCRIPT" <<'EOF'
+#!/bin/bash
+set -euo pipefail
+
+pwd_auth_file="$1"
+pwd_cred_store="/etc/openvpn/server/client-pwd-auth"
+client_file="$pwd_cred_store/${common_name}.credentials"
+
+[ -f "$pwd_auth_file" ] || exit 1
+[ -f "$client_file" ] || exit 1
+
+username="$(sed -n '1p' "$pwd_auth_file")"
+password="$(sed -n '2p' "$pwd_auth_file")"
+[ -n "$username" ] || exit 1
+
+while IFS=: read -r stored_user stored_password; do
+  [ "$stored_user" = "$username" ] || continue
+  stored_password="${stored_password//\\:/:}"
+  stored_password="${stored_password//\\\\/\\}"
+  [ "$stored_password" = "$password" ] || exit 1
+  exit 0
+done < "$client_file"
+
+exit 1
+EOF
+
+  chmod 700 "$PWD_AUTH_VERIFY_SCRIPT"
+}
+
+ensure_server_conf_has_pwd_auth() {
+  local conf_file="$1"
+
+  ensure_conf_has_line "$conf_file" "script-security 2"
+  ensure_conf_has_line "$conf_file" "auth-user-pass-verify ${PWD_AUTH_VERIFY_SCRIPT} via-file"
+}
+
 extract_server_value() {
   local conf_file="$1"
   local key="$2"
@@ -114,12 +153,14 @@ ensure_tcp_server_conf() {
   sed -i '/^explicit-exit-notify$/d' "$TCP_SERVER_CONF"
 
   ensure_conf_has_line "$TCP_SERVER_CONF" "client-config-dir ${TCP_CCD_DIR}"
+  ensure_server_conf_has_pwd_auth "$TCP_SERVER_CONF"
 }
 
 ensure_udp_server_conf() {
   sed -i "s#^client-config-dir .*#client-config-dir ${UDP_CCD_DIR}#" "$SERVER_CONF"
   sed -i "s#^ifconfig-pool-persist .*#ifconfig-pool-persist ${UDP_IPP_FILE}#" "$SERVER_CONF"
   ensure_conf_has_line "$SERVER_CONF" "client-config-dir ${UDP_CCD_DIR}"
+  ensure_server_conf_has_pwd_auth "$SERVER_CONF"
 }
 
 ensure_common_artifact_names() {
@@ -128,6 +169,7 @@ ensure_common_artifact_names() {
   local legacy_client_dir="${OPENVPN_DIR}/client"
 
   mkdir -p "$UDP_CCD_DIR" "$TCP_CCD_DIR" "$CLIENT_DIR"
+  mkdir -p "$PWD_AUTH_DIR"
 
   if [ -f "$legacy_udp_conf" ] && [ ! -f "$SERVER_CONF" ]; then
     mv "$legacy_udp_conf" "$SERVER_CONF"
@@ -157,6 +199,9 @@ ensure_common_artifact_names() {
 
   if [ -f "$CLIENT_COMMON_FILE" ]; then
     sed -i "s#^route .*#route 172.22.0.0 255.255.0.0#" "$CLIENT_COMMON_FILE"
+    if ! grep -Fqs "auth-user-pass" "$CLIENT_COMMON_FILE"; then
+      printf '\nauth-user-pass\n' >> "$CLIENT_COMMON_FILE"
+    fi
   fi
 }
 
@@ -314,11 +359,13 @@ if { [ ! -f "$SERVER_CONF" ] && [ ! -f "${SERVER_DIR}/server.conf" ]; } || [ ! -
 fi
 
 mkdir -p "$SERVER_DIR" "$UDP_CCD_DIR" "$TCP_CCD_DIR" "$CLIENT_DIR"
+mkdir -p "$PWD_AUTH_DIR"
 
 deploy_file "$INSTALL_SOURCE" "$INSTALL_TARGET" 700
 deploy_file "$CLIENT_SOURCE" "$CLIENT_TARGET" 700
 deploy_file "$REVOKE_SOURCE" "$REVOKE_TARGET" 700
 deploy_file "$ASSIGN_SOURCE" "$ASSIGN_TARGET" 700
+deploy_pwd_auth_verify_script
 
 ensure_common_artifact_names
 

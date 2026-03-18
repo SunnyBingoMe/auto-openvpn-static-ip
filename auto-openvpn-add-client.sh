@@ -5,6 +5,8 @@ ORIGINAL_ARGS=("$@")
 
 PROFILE_PROTO="udp"
 CN=""
+PWD_AUTH_USERNAME=""
+PWD_AUTH_PASSWORD=""
 
 SCRIPT_PATH="$(readlink -f "$0")"
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
@@ -73,6 +75,37 @@ validate_client_name() {
     echo "Allowed characters: letters, numbers, '-' and '_'" >&2
     exit 1
   fi
+}
+
+prompt_pwd_auth_credentials() {
+  local username_input
+
+  echo
+  read -r -p "Username [${CN}]: " username_input
+  if [ -z "$username_input" ]; then
+    PWD_AUTH_USERNAME="$CN"
+  else
+    PWD_AUTH_USERNAME="$username_input"
+  fi
+
+  read -r -s -p "Password [empty]: " PWD_AUTH_PASSWORD
+  echo
+}
+
+store_pwd_auth_credentials() {
+  local pwd_auth_dir
+  local pwd_auth_file
+  local escaped_password
+
+  pwd_auth_dir="${SERVER_DIR}/client-pwd-auth"
+  pwd_auth_file="${pwd_auth_dir}/${CN}.credentials"
+
+  mkdir -p "$pwd_auth_dir"
+  chmod 700 "$pwd_auth_dir"
+
+  escaped_password="$(printf '%s' "$PWD_AUTH_PASSWORD" | sed 's/\\/\\\\/g; s/:/\\:/g')"
+  printf '%s:%s\n' "$PWD_AUTH_USERNAME" "$escaped_password" > "$pwd_auth_file"
+  chmod 600 "$pwd_auth_file"
 }
 
 require_root() {
@@ -294,6 +327,7 @@ rewrite_profile_for_protocol() {
 parse_args "$@"
 validate_client_name
 require_root "${ORIGINAL_ARGS[@]}"
+prompt_pwd_auth_credentials
 
 CLIENT_DIR="$(resolve_client_dir)"
 SERVER_CONF="$(resolve_server_conf)"
@@ -342,6 +376,7 @@ fi
 
 mkdir -p "$CLIENT_DIR"
 mkdir -p "$UDP_CCD_DIR" "$TCP_CCD_DIR"
+store_pwd_auth_credentials
 
 INSTALL_OUTPUT=""
 if [ -f "${SERVER_DIR}/easy-rsa/pki/issued/${CN}.crt" ]; then

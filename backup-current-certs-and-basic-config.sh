@@ -6,6 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 
 OPENVPN_DIR="/etc/openvpn"
 SERVER_DIR="${OPENVPN_DIR}/server"
+PWD_AUTH_DIR="${SERVER_DIR}/client-pwd-auth"
 BACKUP_NAME_DEFAULT="current-certs-and-basic-config-$(date +%F).tgz"
 OUTPUT_PATH="${1:-${SCRIPT_DIR}/${BACKUP_NAME_DEFAULT}}"
 
@@ -54,6 +55,7 @@ build_manifest() {
     "${SERVER_DIR}/server-udp.conf"
     "${SERVER_DIR}/server-tcp.conf"
     "${SERVER_DIR}/client-common-udp-tcp.txt"
+    "${SERVER_DIR}/client-pwd-auth"
     "${SERVER_DIR}/ipp-udp.txt"
     "${SERVER_DIR}/ipp-tcp.txt"
     "${SERVER_DIR}/to-get-from-hwdsl2.sh"
@@ -74,6 +76,29 @@ build_manifest() {
   done
 }
 
+print_best_effort_summary() {
+  local credential_count="unknown"
+  local udp_ccd_count="unknown"
+  local tcp_ccd_count="unknown"
+
+  if [ -d "$PWD_AUTH_DIR" ]; then
+    credential_count="$(find "$PWD_AUTH_DIR" -mindepth 1 -maxdepth 1 -type f 2>/dev/null | wc -l | tr -d ' ')"
+  fi
+
+  if [ -d "${OPENVPN_DIR}/ccd-udp" ]; then
+    udp_ccd_count="$(find "${OPENVPN_DIR}/ccd-udp" -mindepth 1 -maxdepth 1 -type f 2>/dev/null | wc -l | tr -d ' ')"
+  fi
+
+  if [ -d "${OPENVPN_DIR}/ccd-tcp" ]; then
+    tcp_ccd_count="$(find "${OPENVPN_DIR}/ccd-tcp" -mindepth 1 -maxdepth 1 -type f 2>/dev/null | wc -l | tr -d ' ')"
+  fi
+
+  echo "Best-effort backup summary:"
+  echo "- pwd-auth credential files: ${credential_count}"
+  echo "- UDP CCD files: ${udp_ccd_count}"
+  echo "- TCP CCD files: ${tcp_ccd_count}"
+}
+
 require_root "$@"
 
 ensure_exists "$SERVER_DIR"
@@ -87,4 +112,5 @@ build_manifest > "$TMP_MANIFEST"
 tar -czf "$OUTPUT_PATH" -C / -T "$TMP_MANIFEST"
 
 echo "Backup created: $OUTPUT_PATH"
+print_best_effort_summary || echo "WARN: failed to generate backup summary; archive itself is still valid"
 echo "Clients can keep their existing cert/key material after restore; only update the remote IP in .ovpn files."

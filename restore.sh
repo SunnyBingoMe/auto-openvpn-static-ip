@@ -11,6 +11,8 @@ CLIENT_DIR="${OPENVPN_DIR}/client-udp-tcp"
 SERVER_CONF="${SERVER_DIR}/server-udp.conf"
 TCP_SERVER_CONF="${SERVER_DIR}/server-tcp.conf"
 CLIENT_COMMON_FILE="${SERVER_DIR}/client-common-udp-tcp.txt"
+PWD_AUTH_DIR="${SERVER_DIR}/client-pwd-auth"
+PWD_AUTH_VERIFY_SCRIPT="${SERVER_DIR}/openvpn-pwd-auth-verify.sh"
 EASYRSA_DIR="${SERVER_DIR}/easy-rsa"
 UDP_FIREWALL_SERVICE="/etc/systemd/system/openvpn-iptables-udp.service"
 TCP_FIREWALL_SERVICE="/etc/systemd/system/openvpn-iptables-tcp.service"
@@ -104,7 +106,7 @@ backup_current_state() {
   ROLLBACK_DIR="/root/openvpn-restore-backup-$(date +%Y%m%d%H%M%S)"
   mkdir -p "$ROLLBACK_DIR"
 
-  for path in "$SERVER_DIR" "$UDP_CCD_DIR" "$TCP_CCD_DIR" "$CLIENT_DIR" "$UDP_FIREWALL_SERVICE" "$TCP_FIREWALL_SERVICE" "$EXTRA_FIREWALL_SERVICE" "$SYSCTL_FORWARD_FILE"; do
+  for path in "$SERVER_DIR" "$UDP_CCD_DIR" "$TCP_CCD_DIR" "$CLIENT_DIR" "$PWD_AUTH_DIR" "$UDP_FIREWALL_SERVICE" "$TCP_FIREWALL_SERVICE" "$EXTRA_FIREWALL_SERVICE" "$SYSCTL_FORWARD_FILE"; do
     if [ -e "$path" ] || [ -L "$path" ]; then
       cp -a --parents "$path" "$ROLLBACK_DIR"
     fi
@@ -122,6 +124,7 @@ install_path() {
 
 restore_tree() {
   install_path "$STAGING_DIR/${SERVER_DIR#/}/easy-rsa" "$EASYRSA_DIR"
+  install_path "$STAGING_DIR/${SERVER_DIR#/}/client-pwd-auth" "$PWD_AUTH_DIR"
   install_path "$STAGING_DIR/${OPENVPN_DIR#/}/ccd-udp" "$UDP_CCD_DIR"
   install_path "$STAGING_DIR/${OPENVPN_DIR#/}/ccd-tcp" "$TCP_CCD_DIR"
 
@@ -151,9 +154,9 @@ restore_tree() {
 
 restore_compat_links() {
   mkdir -p "$CLIENT_DIR"
-  chmod 700 "$UDP_CCD_DIR" "$TCP_CCD_DIR" "$CLIENT_DIR"
+  chmod 700 "$UDP_CCD_DIR" "$TCP_CCD_DIR" "$CLIENT_DIR" "$PWD_AUTH_DIR"
   chmod 700 "$SERVER_DIR"
-  chown -R root:root "$SERVER_DIR" "$UDP_CCD_DIR" "$TCP_CCD_DIR" "$CLIENT_DIR"
+  chown -R root:root "$SERVER_DIR" "$UDP_CCD_DIR" "$TCP_CCD_DIR" "$CLIENT_DIR" "$PWD_AUTH_DIR"
   chown nobody:nogroup "${SERVER_DIR}/crl.pem" 2>/dev/null || true
   chmod o+x "$SERVER_DIR"
 
@@ -169,6 +172,36 @@ restore_compat_links() {
   fi
 }
 
+deploy_pwd_auth_verify_script() {
+  cat > "$PWD_AUTH_VERIFY_SCRIPT" <<'EOF'
+#!/bin/bash
+set -euo pipefail
+
+pwd_auth_file="$1"
+pwd_cred_store="/etc/openvpn/server/client-pwd-auth"
+client_file="$pwd_cred_store/${common_name}.credentials"
+
+[ -f "$pwd_auth_file" ] || exit 1
+[ -f "$client_file" ] || exit 1
+
+username="$(sed -n '1p' "$pwd_auth_file")"
+password="$(sed -n '2p' "$pwd_auth_file")"
+[ -n "$username" ] || exit 1
+
+while IFS=: read -r stored_user stored_password; do
+  [ "$stored_user" = "$username" ] || continue
+  stored_password="${stored_password//\:/:}"
+  stored_password="${stored_password//\\/\\}"
+  [ "$stored_password" = "$password" ] || exit 1
+  exit 0
+done < "$client_file"
+
+exit 1
+EOF
+
+  chmod 700 "$PWD_AUTH_VERIFY_SCRIPT"
+}
+
 restart_services() {
   if ! command -v systemctl >/dev/null 2>&1; then
     return 0
@@ -181,6 +214,28 @@ restart_services() {
   systemctl enable --now openvpn-iptables-udp-tcp-extra.service >/dev/null 2>&1 || true
   systemctl enable --now openvpn-server@server-udp.service >/dev/null 2>&1
   systemctl enable --now openvpn-server@server-tcp.service >/dev/null 2>&1
+}
+
+print_manual_checklist() {
+  local udp_port
+  local tcp_port
+
+  udp_port="$(awk '$1 == "port" { print $2; exit }' "$SERVER_CONF")"
+  tcp_port="$(awk '$1 == "port" { print $2; exit }' "$TCP_SERVER_CONF")"
+  [ -n "$udp_port" ] || udp_port=1194
+  [ -n "$tcp_port" ] || tcp_port="$udp_port"
+
+  echo
+  echo "恢复后建议继续做两步核对："
+  echo "第 1 步：先做主流程检查"
+  echo "  sudo bash tests/restore-smoke-test.sh"
+  echo "  sudo systemctl status openvpn-server@server-udp.service openvpn-server@server-tcp.service --no-pager"
+  echo "第 2 步：再做人工确认"
+  echo "- 确认公网 IP 或 DNS 已经切到当前服务器；如果客户端配置里写的是 IP，通常只需要修改 .ovpn 里的 remote IP。"
+  echo "- 确认云安全组、上游防火墙、UFW、nftables 没有拦截 UDP ${udp_port} 和 TCP ${tcp_port}。"
+  echo "- 确认 /etc/openvpn/server/client-pwd-auth 与旧服务器一致，尤其是所有使用密码登录的客户端。"
+  echo "- 用一个真实 UDP 客户端和一个真实 TCP 客户端各连一次，验证只改 remote IP 后即可正常连接。"
+  echo "- 如果你已经有旧服务器的本地快照，可选执行：sudo bash compare-restore-state.sh <old-server-root> /"
 }
 
 require_root "$@"
@@ -212,6 +267,7 @@ ensure_archive_entry "etc/openvpn/server/easy-rsa/"
 ensure_archive_entry "etc/openvpn/server/server-udp.conf"
 ensure_archive_entry "etc/openvpn/server/server-tcp.conf"
 ensure_archive_entry "etc/openvpn/server/client-common-udp-tcp.txt"
+ensure_archive_entry "etc/openvpn/server/client-pwd-auth/"
 ensure_archive_entry "etc/openvpn/server/ca.crt"
 ensure_archive_entry "etc/openvpn/server/server.crt"
 ensure_archive_entry "etc/openvpn/server/server.key"
@@ -225,8 +281,10 @@ stop_services
 backup_current_state
 restore_tree
 restore_compat_links
+deploy_pwd_auth_verify_script
 restart_services
 
 echo "Restore completed from: $ARCHIVE_PATH"
 echo "Rollback backup saved to: $ROLLBACK_DIR"
 echo "Existing clients should only need the new server IP in their .ovpn remote line."
+print_manual_checklist

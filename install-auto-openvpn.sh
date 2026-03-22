@@ -56,6 +56,18 @@ LEGACY_OPENVPN_DROPIN_DIR="${SYSTEMD_DIR}/openvpn-server@server.service.d"
 UDP_OPENVPN_DROPIN_DIR="${SYSTEMD_DIR}/openvpn-server@server-udp.service.d"
 TCP_OPENVPN_DROPIN_DIR="${SYSTEMD_DIR}/openvpn-server@server-tcp.service.d"
 
+run_root_cmd() {
+  if [ "$(id -u)" -eq 0 ]; then
+    "$@"
+  else
+    sudo "$@"
+  fi
+}
+
+has_command() {
+  command -v "$1" >/dev/null 2>&1
+}
+
 deploy_file() {
   local source_file="$1"
   local target_file="$2"
@@ -318,8 +330,8 @@ RemainAfterExit=yes
 WantedBy=multi-user.target
 EOF
 
-  systemctl daemon-reload
-  systemctl enable --now openvpn-iptables-tcp.service >/dev/null 2>&1
+  run_root_cmd systemctl daemon-reload
+  run_root_cmd systemctl enable --now openvpn-iptables-tcp.service
 
   cat > "$EXTRA_FIREWALL_SERVICE" <<EOF
 [Unit]
@@ -327,27 +339,27 @@ After=network-online.target openvpn-iptables-udp.service openvpn-iptables-tcp.se
 Wants=network-online.target
 [Service]
 Type=oneshot
-ExecStart=${iptables_path} -w 5 -I FORWARD -s ${tcp_network}/16 -j ACCEPT
-ExecStart=${iptables_path} -w 5 -t nat -I POSTROUTING -s ${udp_network}/16 -d ${tcp_network}/16 -j RETURN
-ExecStart=${iptables_path} -w 5 -t nat -I POSTROUTING -s ${tcp_network}/16 -d ${udp_network}/16 -j RETURN
-ExecStart=${iptables_path} -w 5 -t nat -A POSTROUTING -s ${tcp_network}/16 ! -d ${udp_network}/16 ! -d ${tcp_network}/16 -j MASQUERADE
+ExecStart=/bin/bash -lc '${iptables_path} -w 5 -C FORWARD -s ${tcp_network}/16 -j ACCEPT || ${iptables_path} -w 5 -I FORWARD -s ${tcp_network}/16 -j ACCEPT'
+ExecStart=/bin/bash -lc '${iptables_path} -w 5 -t nat -C POSTROUTING -s ${udp_network}/16 -d ${tcp_network}/16 -j RETURN || ${iptables_path} -w 5 -t nat -I POSTROUTING -s ${udp_network}/16 -d ${tcp_network}/16 -j RETURN'
+ExecStart=/bin/bash -lc '${iptables_path} -w 5 -t nat -C POSTROUTING -s ${tcp_network}/16 -d ${udp_network}/16 -j RETURN || ${iptables_path} -w 5 -t nat -I POSTROUTING -s ${tcp_network}/16 -d ${udp_network}/16 -j RETURN'
+ExecStart=/bin/bash -lc '${iptables_path} -w 5 -t nat -C POSTROUTING -s ${tcp_network}/16 ! -d ${udp_network}/16 -m addrtype ! --dst-type LOCAL -j MASQUERADE || ${iptables_path} -w 5 -t nat -A POSTROUTING -s ${tcp_network}/16 ! -d ${udp_network}/16 -m addrtype ! --dst-type LOCAL -j MASQUERADE'
 ExecStop=${iptables_path} -w 5 -D FORWARD -s ${tcp_network}/16 -j ACCEPT
 ExecStop=${iptables_path} -w 5 -t nat -D POSTROUTING -s ${udp_network}/16 -d ${tcp_network}/16 -j RETURN
 ExecStop=${iptables_path} -w 5 -t nat -D POSTROUTING -s ${tcp_network}/16 -d ${udp_network}/16 -j RETURN
-ExecStop=${iptables_path} -w 5 -t nat -D POSTROUTING -s ${tcp_network}/16 ! -d ${udp_network}/16 ! -d ${tcp_network}/16 -j MASQUERADE
+ExecStop=${iptables_path} -w 5 -t nat -D POSTROUTING -s ${tcp_network}/16 ! -d ${udp_network}/16 -m addrtype ! --dst-type LOCAL -j MASQUERADE
 RemainAfterExit=yes
 [Install]
 WantedBy=multi-user.target
 EOF
 
-  systemctl daemon-reload
-  systemctl enable --now openvpn-iptables-udp-tcp-extra.service >/dev/null 2>&1
+  run_root_cmd systemctl daemon-reload
+  run_root_cmd systemctl enable --now openvpn-iptables-udp-tcp-extra.service
 }
 
 ensure_tcp_selinux_port() {
   local tcp_port
 
-  if ! command -v sestatus >/dev/null 2>&1 || ! command -v semanage >/dev/null 2>&1; then
+  if ! has_command sestatus || ! has_command semanage; then
     return 0
   fi
 
@@ -363,8 +375,8 @@ ensure_tcp_selinux_port() {
   fi
 
   if ! semanage port -l | grep -Eq "^openvpn_port_t[[:space:]]+tcp[[:space:]].*\b${tcp_port}\b"; then
-    semanage port -a -t openvpn_port_t -p tcp "$tcp_port" >/dev/null 2>&1 \
-      || semanage port -m -t openvpn_port_t -p tcp "$tcp_port" >/dev/null 2>&1
+    run_root_cmd semanage port -a -t openvpn_port_t -p tcp "$tcp_port" >/dev/null 2>&1 \
+      || run_root_cmd semanage port -m -t openvpn_port_t -p tcp "$tcp_port" >/dev/null 2>&1
   fi
 }
 
@@ -380,12 +392,12 @@ sync_openvpn_dropins() {
   mkdir -p "$target_dir"
 
   if [ -d "$LEGACY_OPENVPN_DROPIN_DIR" ]; then
-    cp -a "$LEGACY_OPENVPN_DROPIN_DIR"/. "$target_dir"/
+    run_root_cmd cp -a "$LEGACY_OPENVPN_DROPIN_DIR"/. "$target_dir"/
   fi
 }
 
 migrate_openvpn_instances() {
-  if ! command -v systemctl >/dev/null 2>&1; then
+  if ! has_command systemctl; then
     return 0
   fi
 
@@ -398,37 +410,37 @@ migrate_openvpn_instances() {
   fi
 
   if [ -d "$LEGACY_OPENVPN_DROPIN_DIR" ]; then
-    rm -rf "$LEGACY_OPENVPN_DROPIN_DIR"
+    run_root_cmd rm -rf "$LEGACY_OPENVPN_DROPIN_DIR"
   fi
 
-  systemctl disable --now "$LEGACY_OPENVPN_SERVICE" >/dev/null 2>&1 || true
+  run_root_cmd systemctl disable --now "$LEGACY_OPENVPN_SERVICE" >/dev/null 2>&1 || true
 }
 
 restart_openvpn() {
-  if ! command -v systemctl >/dev/null 2>&1; then
+  if ! has_command systemctl; then
     return 0
   fi
 
-  systemctl daemon-reload >/dev/null 2>&1 || true
+  run_root_cmd systemctl daemon-reload >/dev/null 2>&1 || true
 
   if [ -f "$SERVER_CONF" ]; then
-    systemctl enable "$UDP_OPENVPN_SERVICE" >/dev/null 2>&1 || true
-    systemctl restart "$UDP_OPENVPN_SERVICE" >/dev/null 2>&1 \
-      || systemctl start "$UDP_OPENVPN_SERVICE" >/dev/null 2>&1 \
+    run_root_cmd systemctl enable "$UDP_OPENVPN_SERVICE" || true
+    run_root_cmd systemctl restart "$UDP_OPENVPN_SERVICE" \
+      || run_root_cmd systemctl start "$UDP_OPENVPN_SERVICE" \
       || true
   fi
 
   if [ -f "$TCP_SERVER_CONF" ]; then
-    systemctl enable "$TCP_OPENVPN_SERVICE" >/dev/null 2>&1 || true
-    systemctl restart "$TCP_OPENVPN_SERVICE" >/dev/null 2>&1 \
-      || systemctl start "$TCP_OPENVPN_SERVICE" >/dev/null 2>&1 \
+    run_root_cmd systemctl enable "$TCP_OPENVPN_SERVICE" || true
+    run_root_cmd systemctl restart "$TCP_OPENVPN_SERVICE" \
+      || run_root_cmd systemctl start "$TCP_OPENVPN_SERVICE" \
       || true
   fi
 }
 print_post_install_checks() {
   echo
   echo "Auto-check: OpenVPN service status"
-  systemctl status "$UDP_OPENVPN_SERVICE" "$TCP_OPENVPN_SERVICE" --no-pager || true
+  run_root_cmd systemctl status "$UDP_OPENVPN_SERVICE" "$TCP_OPENVPN_SERVICE" --no-pager || true
 
   echo
   echo "Auto-check: OpenVPN listening sockets"
@@ -443,7 +455,7 @@ for required_file in "$ASSIGN_SOURCE" "$CLIENT_SOURCE" "$REVOKE_SOURCE" "$INSTAL
 done
 
 if { [ ! -f "$SERVER_CONF" ] && [ ! -f "${SERVER_DIR}/server.conf" ]; } || [ ! -d "$EASYRSA_DIR" ]; then
-  bash "$INSTALL_SOURCE" --auto
+  run_root_cmd bash "$INSTALL_SOURCE" --auto
 fi
 
 mkdir -p "$SERVER_DIR" "$UDP_CCD_DIR" "$TCP_CCD_DIR" "$CLIENT_DIR"

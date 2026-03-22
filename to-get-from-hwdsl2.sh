@@ -1145,7 +1145,8 @@ create_client_common() {
 	# If the server is behind NAT, use the correct IP address
 	[[ -n "$public_ip" ]] && ip="$public_ip"
 	# client-common.txt is created so we have a template to add further users later
-	echo "client
+	cat > /etc/openvpn/server/client-common.txt <<EOF
+client
 dev tun
 proto $protocol
 remote $ip $port
@@ -1159,10 +1160,11 @@ auth SHA256
 cipher AES-128-GCM
 ignore-unknown-option block-outside-dns block-ipv6
 pull-filter ignore redirect-gateway
-pull-filter ignore dhcp-option DNS
+pull-filter ignore "dhcp-option DNS"
 route-nopull
 route 172.22.0.0 255.255.0.0
-verb 3" > /etc/openvpn/server/client-common.txt
+verb 3
+EOF
 }
 
 start_openvpn_service() {

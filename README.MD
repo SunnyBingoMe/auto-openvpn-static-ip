@@ -104,7 +104,7 @@ ifconfig-push 172.22.X.Y 255.255.0.0
 auth-user-pass
 ignore-unknown-option block-outside-dns block-ipv6
 pull-filter ignore redirect-gateway
-pull-filter ignore dhcp-option DNS
+pull-filter ignore "dhcp-option DNS"
 route-nopull
 route 172.22.0.0 255.255.0.0
 ```

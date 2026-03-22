@@ -79,6 +79,7 @@ validate_client_name() {
 
 prompt_pwd_auth_credentials() {
   local username_input
+  local password_confirm
 
   echo
   read -r -p "Username [${CN}]: " username_input
@@ -88,8 +89,18 @@ prompt_pwd_auth_credentials() {
     PWD_AUTH_USERNAME="$username_input"
   fi
 
-  read -r -s -p "Password [empty]: " PWD_AUTH_PASSWORD
-  echo
+  while true; do
+    read -r -s -p "Password [empty]: " PWD_AUTH_PASSWORD
+    echo
+    read -r -s -p "Confirm Password [empty]: " password_confirm
+    echo
+
+    if [ "$PWD_AUTH_PASSWORD" = "$password_confirm" ]; then
+      break
+    fi
+
+    echo "Passwords do not match. Please try again." >&2
+  done
 }
 
 store_pwd_auth_credentials() {

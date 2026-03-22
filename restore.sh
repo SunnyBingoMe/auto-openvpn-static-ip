@@ -156,9 +156,9 @@ restore_tree() {
 
 restore_compat_links() {
   mkdir -p "$CLIENT_DIR"
-  chmod 700 "$UDP_CCD_DIR" "$TCP_CCD_DIR" "$CLIENT_DIR" "$PWD_AUTH_DIR"
+  chmod 700 "$UDP_CCD_DIR" "$TCP_CCD_DIR" "$CLIENT_DIR"
   chmod 700 "$SERVER_DIR"
-  chown -R root:root "$SERVER_DIR" "$UDP_CCD_DIR" "$TCP_CCD_DIR" "$CLIENT_DIR" "$PWD_AUTH_DIR"
+  chown -R root:root "$SERVER_DIR" "$UDP_CCD_DIR" "$TCP_CCD_DIR" "$CLIENT_DIR"
   chown nobody:nogroup "${SERVER_DIR}/crl.pem" 2>/dev/null || true
   chmod o+x "$SERVER_DIR"
 
@@ -201,7 +201,48 @@ done < "$client_file"
 exit 1
 EOF
 
-  chmod 700 "$PWD_AUTH_VERIFY_SCRIPT"
+  chmod 750 "$PWD_AUTH_VERIFY_SCRIPT"
+}
+
+detect_openvpn_runtime_group() {
+  local conf_file
+  local runtime_group
+
+  for conf_file in "$SERVER_CONF" "${SERVER_DIR}/server.conf"; do
+    [ -f "$conf_file" ] || continue
+    runtime_group="$(awk '$1 == "group" { print $2; exit }' "$conf_file")"
+    if [ -n "$runtime_group" ] && getent group "$runtime_group" >/dev/null 2>&1; then
+      printf '%s\n' "$runtime_group"
+      return 0
+    fi
+  done
+
+  for runtime_group in nogroup nobody; do
+    if getent group "$runtime_group" >/dev/null 2>&1; then
+      printf '%s\n' "$runtime_group"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+ensure_pwd_auth_access() {
+  local runtime_group
+
+  runtime_group="$(detect_openvpn_runtime_group)" || {
+    echo "Failed to determine OpenVPN runtime group for password auth files" >&2
+    exit 1
+  }
+
+  mkdir -p "$PWD_AUTH_DIR"
+  chown root:"$runtime_group" "$PWD_AUTH_DIR" "$PWD_AUTH_VERIFY_SCRIPT"
+  chmod 750 "$PWD_AUTH_DIR" "$PWD_AUTH_VERIFY_SCRIPT"
+
+  find "$PWD_AUTH_DIR" -maxdepth 1 -type f -name '*.credentials' \
+    -exec chown root:"$runtime_group" {} +
+  find "$PWD_AUTH_DIR" -maxdepth 1 -type f -name '*.credentials' \
+    -exec chmod 640 {} +
 }
 
 restart_services() {
@@ -282,6 +323,7 @@ backup_current_state
 restore_tree
 restore_compat_links
 deploy_pwd_auth_verify_script
+ensure_pwd_auth_access
 restart_services
 
 echo "Restore completed from: $ARCHIVE_PATH"

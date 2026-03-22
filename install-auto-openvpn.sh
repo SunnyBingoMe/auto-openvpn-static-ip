@@ -114,7 +114,48 @@ done < "$client_file"
 exit 1
 EOF
 
-  chmod 700 "$PWD_AUTH_VERIFY_SCRIPT"
+  chmod 750 "$PWD_AUTH_VERIFY_SCRIPT"
+}
+
+detect_openvpn_runtime_group() {
+  local conf_file
+  local runtime_group
+
+  for conf_file in "$SERVER_CONF" "${SERVER_DIR}/server.conf"; do
+    [ -f "$conf_file" ] || continue
+    runtime_group="$(awk '$1 == "group" { print $2; exit }' "$conf_file")"
+    if [ -n "$runtime_group" ] && getent group "$runtime_group" >/dev/null 2>&1; then
+      printf '%s\n' "$runtime_group"
+      return 0
+    fi
+  done
+
+  for runtime_group in nogroup nobody; do
+    if getent group "$runtime_group" >/dev/null 2>&1; then
+      printf '%s\n' "$runtime_group"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+ensure_pwd_auth_access() {
+  local runtime_group
+
+  runtime_group="$(detect_openvpn_runtime_group)" || {
+    echo "Failed to determine OpenVPN runtime group for password auth files" >&2
+    exit 1
+  }
+
+  mkdir -p "$PWD_AUTH_DIR"
+  chown root:"$runtime_group" "$PWD_AUTH_DIR" "$PWD_AUTH_VERIFY_SCRIPT"
+  chmod 750 "$PWD_AUTH_DIR" "$PWD_AUTH_VERIFY_SCRIPT"
+
+  find "$PWD_AUTH_DIR" -maxdepth 1 -type f -name '*.credentials' \
+    -exec chown root:"$runtime_group" {} +
+  find "$PWD_AUTH_DIR" -maxdepth 1 -type f -name '*.credentials' \
+    -exec chmod 640 {} +
 }
 
 ensure_server_conf_has_pwd_auth() {
@@ -368,6 +409,7 @@ deploy_file "$ASSIGN_SOURCE" "$ASSIGN_TARGET" 700
 deploy_pwd_auth_verify_script
 
 ensure_common_artifact_names
+ensure_pwd_auth_access
 
 chmod 700 "$UDP_CCD_DIR"
 chmod 700 "$TCP_CCD_DIR"

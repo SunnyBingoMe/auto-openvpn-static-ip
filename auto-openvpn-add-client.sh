@@ -107,16 +107,26 @@ store_pwd_auth_credentials() {
   local pwd_auth_dir
   local pwd_auth_file
   local escaped_password
+  local runtime_group
 
   pwd_auth_dir="${SERVER_DIR}/client-pwd-auth"
   pwd_auth_file="${pwd_auth_dir}/${CN}.credentials"
+  runtime_group="$(awk '$1 == "group" { print $2; exit }' "$SERVER_CONF" 2>/dev/null)"
+  if [ -z "$runtime_group" ] || ! getent group "$runtime_group" >/dev/null 2>&1; then
+    runtime_group="nogroup"
+    if ! getent group "$runtime_group" >/dev/null 2>&1; then
+      runtime_group="nobody"
+    fi
+  fi
 
   mkdir -p "$pwd_auth_dir"
-  chmod 700 "$pwd_auth_dir"
+  chown root:"$runtime_group" "$pwd_auth_dir"
+  chmod 750 "$pwd_auth_dir"
 
   escaped_password="$(printf '%s' "$PWD_AUTH_PASSWORD" | sed 's/\\/\\\\/g; s/:/\\:/g')"
   printf '%s:%s\n' "$PWD_AUTH_USERNAME" "$escaped_password" > "$pwd_auth_file"
-  chmod 600 "$pwd_auth_file"
+  chown root:"$runtime_group" "$pwd_auth_file"
+  chmod 640 "$pwd_auth_file"
 }
 
 require_root() {

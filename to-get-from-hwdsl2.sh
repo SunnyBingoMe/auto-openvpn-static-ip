@@ -1388,13 +1388,6 @@ ovpnsetup() {
 
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-check_root
-check_shell
-check_kernel
-check_os
-check_os_ver
-check_tun
-
 OVPN_CONF="/etc/openvpn/server/server.conf"
 
 auto=0
@@ -1417,6 +1410,12 @@ dns1=""
 dns2=""
 
 parse_args "$@"
+check_root
+check_shell
+check_kernel
+check_os
+check_os_ver
+check_tun
 check_args
 
 if [ "$add_client" = 1 ]; then

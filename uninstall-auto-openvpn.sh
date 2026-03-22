@@ -3,6 +3,21 @@ set -euo pipefail
 
 SCRIPT_PATH="$(readlink -f "$0")"
 
+require_root() {
+  if [ "$(id -u)" -eq 0 ]; then
+    return 0
+  fi
+
+  if ! command -v sudo >/dev/null 2>&1; then
+    echo "This script requires root privileges and sudo is not available." >&2
+    exit 1
+  fi
+
+  exec sudo bash "$SCRIPT_PATH" "$@"
+}
+
+require_root "$@"
+
 OPENVPN_DIR="/etc/openvpn"
 SERVER_DIR="${OPENVPN_DIR}/server"
 UDP_CCD_DIR="${OPENVPN_DIR}/ccd-udp"
@@ -32,19 +47,6 @@ UPSTREAM_SYSCTL_FORWARD="/etc/sysctl.d/99-openvpn-forward.conf"
 UPSTREAM_SYSCTL_OPTIMIZE="/etc/sysctl.d/99-openvpn-optimize.conf"
 LEGACY_IPP_FILE="${OPENVPN_DIR}/ipp.txt"
 RCLOCAL_FILE="/etc/rc.local"
-
-require_root() {
-  if [ "$(id -u)" -eq 0 ]; then
-    return 0
-  fi
-
-  if ! command -v sudo >/dev/null 2>&1; then
-    echo "This script requires root privileges and sudo is not available." >&2
-    exit 1
-  fi
-
-  exec sudo bash "$SCRIPT_PATH" "$@"
-}
 
 ask_yes_no() {
   local prompt="$1"
@@ -180,8 +182,6 @@ is_dir_non_empty() {
   return 1
 }
 
-require_root "$@"
-
 keep_client_config=false
 keep_server_config=false
 
@@ -255,7 +255,7 @@ if command -v systemctl >/dev/null 2>&1; then
 fi
 
 if is_dir_non_empty "$OPENVPN_DIR"; then
-  if ask_yes_no "$OPENVPN_DIR is not empty. Delete it as well?" "y"; then
+  if ask_yes_no "$OPENVPN_DIR NOT empty! 非空！确定删除么？" "y"; then
     remove_if_exists "$OPENVPN_DIR"
   fi
 fi

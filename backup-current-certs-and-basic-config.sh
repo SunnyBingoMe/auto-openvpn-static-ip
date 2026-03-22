@@ -4,12 +4,6 @@ set -euo pipefail
 SCRIPT_PATH="$(readlink -f "$0")"
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 
-OPENVPN_DIR="/etc/openvpn"
-SERVER_DIR="${OPENVPN_DIR}/server"
-PWD_AUTH_DIR="${SERVER_DIR}/client-pwd-auth"
-BACKUP_NAME_DEFAULT="current-certs-and-basic-config-$(date +%F).tgz"
-OUTPUT_PATH="${1:-${SCRIPT_DIR}/${BACKUP_NAME_DEFAULT}}"
-
 require_root() {
   if [ "$(id -u)" -eq 0 ]; then
     return 0
@@ -22,6 +16,14 @@ require_root() {
 
   exec sudo bash "$SCRIPT_PATH" "$@"
 }
+
+require_root "$@"
+
+OPENVPN_DIR="/etc/openvpn"
+SERVER_DIR="${OPENVPN_DIR}/server"
+PWD_AUTH_DIR="${SERVER_DIR}/client-pwd-auth"
+BACKUP_NAME_DEFAULT="current-certs-and-basic-config-$(date +%F).tgz"
+OUTPUT_PATH="${1:-${SCRIPT_DIR}/${BACKUP_NAME_DEFAULT}}"
 
 ensure_exists() {
   local path="$1"
@@ -98,8 +100,6 @@ print_best_effort_summary() {
   echo "- UDP CCD files: ${udp_ccd_count}"
   echo "- TCP CCD files: ${tcp_ccd_count}"
 }
-
-require_root "$@"
 
 ensure_exists "$SERVER_DIR"
 ensure_parent_dir "$OUTPUT_PATH"

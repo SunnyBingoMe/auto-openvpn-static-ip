@@ -158,9 +158,15 @@ cleanup_client_files() {
   remove_ipp_entry "$TCP_IPP_FILE"
 }
 
+case "${1:-}" in
+  --help|-h)
+    parse_args "$@"
+    ;;
+esac
+
+require_root "${ORIGINAL_ARGS[@]}"
 parse_args "$@"
 validate_client_name
-require_root "${ORIGINAL_ARGS[@]}"
 
 INSTALL_SCRIPT="$(find_install_script || true)"
 

@@ -3,6 +3,21 @@ set -euo pipefail
 
 SCRIPT_PATH="$(readlink -f "$0")"
 
+require_root() {
+  if [ "$(id -u)" -eq 0 ]; then
+    return 0
+  fi
+
+  if ! command -v sudo >/dev/null 2>&1; then
+    echo "This script requires root privileges and sudo is not available." >&2
+    exit 1
+  fi
+
+  exec sudo bash "$SCRIPT_PATH" "$@"
+}
+
+require_root "$@"
+
 OPENVPN_DIR="/etc/openvpn"
 SERVER_DIR="${OPENVPN_DIR}/server"
 UDP_CCD_DIR="${OPENVPN_DIR}/ccd-udp"
@@ -23,19 +38,6 @@ CLIENT_LINK="/usr/local/sbin/auto-openvpn-add-client.sh"
 REVOKE_LINK="/usr/local/sbin/auto-openvpn-revoke-client.sh"
 
 ARCHIVE_PATH="${1:-}"
-
-require_root() {
-  if [ "$(id -u)" -eq 0 ]; then
-    return 0
-  fi
-
-  if ! command -v sudo >/dev/null 2>&1; then
-    echo "This script requires root privileges and sudo is not available." >&2
-    exit 1
-  fi
-
-  exec sudo bash "$SCRIPT_PATH" "$@"
-}
 
 usage() {
   cat <<'EOF'
@@ -237,8 +239,6 @@ print_manual_checklist() {
   echo "- 用一个真实 UDP 客户端和一个真实 TCP 客户端各连一次，验证只改 remote IP 后即可正常连接。"
   echo "- 如果你已经有旧服务器的本地快照，可选执行：sudo bash compare-restore-state.sh <old-server-root> /"
 }
-
-require_root "$@"
 
 if [ -z "$ARCHIVE_PATH" ]; then
   usage >&2

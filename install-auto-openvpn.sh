@@ -4,6 +4,21 @@ set -euo pipefail
 SCRIPT_PATH="$(readlink -f "$0")"
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 
+require_root() {
+  if [ "$(id -u)" -eq 0 ]; then
+    return 0
+  fi
+
+  if ! command -v sudo >/dev/null 2>&1; then
+    echo "This script requires root privileges and sudo is not available." >&2
+    exit 1
+  fi
+
+  exec sudo bash "$SCRIPT_PATH" "$@"
+}
+
+require_root "$@"
+
 OPENVPN_DIR="/etc/openvpn"
 SERVER_DIR="${OPENVPN_DIR}/server"
 UDP_CCD_DIR="${OPENVPN_DIR}/ccd-udp"
@@ -33,19 +48,6 @@ REVOKE_TARGET="${SERVER_DIR}/auto-openvpn-revoke-client.sh"
 INSTALL_TARGET="${SERVER_DIR}/to-get-from-hwdsl2.sh"
 CLIENT_LINK="/usr/local/sbin/auto-openvpn-add-client.sh"
 REVOKE_LINK="/usr/local/sbin/auto-openvpn-revoke-client.sh"
-
-require_root() {
-  if [ "$(id -u)" -eq 0 ]; then
-    return 0
-  fi
-
-  if ! command -v sudo >/dev/null 2>&1; then
-    echo "This script requires root privileges and sudo is not available." >&2
-    exit 1
-  fi
-
-  exec sudo bash "$SCRIPT_PATH" "$@"
-}
 
 deploy_file() {
   local source_file="$1"
@@ -344,8 +346,6 @@ restart_openvpn() {
       || true
   fi
 }
-
-require_root "$@"
 
 for required_file in "$ASSIGN_SOURCE" "$CLIENT_SOURCE" "$REVOKE_SOURCE" "$INSTALL_SOURCE"; do
   if [ ! -f "$required_file" ]; then

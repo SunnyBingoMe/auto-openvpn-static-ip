@@ -324,9 +324,15 @@ rewrite_profile_for_protocol() {
   }
 }
 
+case "${1:-}" in
+  --help|-h)
+    parse_args "$@"
+    ;;
+esac
+
+require_root "${ORIGINAL_ARGS[@]}"
 parse_args "$@"
 validate_client_name
-require_root "${ORIGINAL_ARGS[@]}"
 prompt_pwd_auth_credentials
 
 CLIENT_DIR="$(resolve_client_dir)"

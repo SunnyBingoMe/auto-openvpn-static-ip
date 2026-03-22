@@ -48,6 +48,13 @@ REVOKE_TARGET="${SERVER_DIR}/auto-openvpn-revoke-client.sh"
 INSTALL_TARGET="${SERVER_DIR}/to-get-from-hwdsl2.sh"
 CLIENT_LINK="/usr/local/sbin/auto-openvpn-add-client.sh"
 REVOKE_LINK="/usr/local/sbin/auto-openvpn-revoke-client.sh"
+LEGACY_OPENVPN_SERVICE="openvpn-server@server.service"
+UDP_OPENVPN_SERVICE="openvpn-server@server-udp.service"
+TCP_OPENVPN_SERVICE="openvpn-server@server-tcp.service"
+SYSTEMD_DIR="/etc/systemd/system"
+LEGACY_OPENVPN_DROPIN_DIR="${SYSTEMD_DIR}/openvpn-server@server.service.d"
+UDP_OPENVPN_DROPIN_DIR="${SYSTEMD_DIR}/openvpn-server@server-udp.service.d"
+TCP_OPENVPN_DROPIN_DIR="${SYSTEMD_DIR}/openvpn-server@server-tcp.service.d"
 
 deploy_file() {
   local source_file="$1"
@@ -367,6 +374,36 @@ ensure_initial_client_ccd() {
   fi
 }
 
+sync_openvpn_dropins() {
+  local target_dir="$1"
+
+  mkdir -p "$target_dir"
+
+  if [ -d "$LEGACY_OPENVPN_DROPIN_DIR" ]; then
+    cp -a "$LEGACY_OPENVPN_DROPIN_DIR"/. "$target_dir"/
+  fi
+}
+
+migrate_openvpn_instances() {
+  if ! command -v systemctl >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if [ -f "$SERVER_CONF" ]; then
+    sync_openvpn_dropins "$UDP_OPENVPN_DROPIN_DIR"
+  fi
+
+  if [ -f "$TCP_SERVER_CONF" ]; then
+    sync_openvpn_dropins "$TCP_OPENVPN_DROPIN_DIR"
+  fi
+
+  if [ -d "$LEGACY_OPENVPN_DROPIN_DIR" ]; then
+    rm -rf "$LEGACY_OPENVPN_DROPIN_DIR"
+  fi
+
+  systemctl disable --now "$LEGACY_OPENVPN_SERVICE" >/dev/null 2>&1 || true
+}
+
 restart_openvpn() {
   if ! command -v systemctl >/dev/null 2>&1; then
     return 0
@@ -375,17 +412,27 @@ restart_openvpn() {
   systemctl daemon-reload >/dev/null 2>&1 || true
 
   if [ -f "$SERVER_CONF" ]; then
-    systemctl disable --now openvpn-server@server.service >/dev/null 2>&1 || true
-    systemctl restart openvpn-server@server-udp.service >/dev/null 2>&1 \
-      || systemctl enable --now openvpn-server@server-udp.service >/dev/null 2>&1 \
+    systemctl enable "$UDP_OPENVPN_SERVICE" >/dev/null 2>&1 || true
+    systemctl restart "$UDP_OPENVPN_SERVICE" >/dev/null 2>&1 \
+      || systemctl start "$UDP_OPENVPN_SERVICE" >/dev/null 2>&1 \
       || true
   fi
 
   if [ -f "$TCP_SERVER_CONF" ]; then
-    systemctl restart openvpn-server@server-tcp.service >/dev/null 2>&1 \
-      || systemctl enable --now openvpn-server@server-tcp.service >/dev/null 2>&1 \
+    systemctl enable "$TCP_OPENVPN_SERVICE" >/dev/null 2>&1 || true
+    systemctl restart "$TCP_OPENVPN_SERVICE" >/dev/null 2>&1 \
+      || systemctl start "$TCP_OPENVPN_SERVICE" >/dev/null 2>&1 \
       || true
   fi
+}
+print_post_install_checks() {
+  echo
+  echo "Auto-check: OpenVPN service status"
+  systemctl status "$UDP_OPENVPN_SERVICE" "$TCP_OPENVPN_SERVICE" --no-pager || true
+
+  echo
+  echo "Auto-check: OpenVPN listening sockets"
+  ss -lntup | grep -E 'openvpn|:1194\b' || true
 }
 
 for required_file in "$ASSIGN_SOURCE" "$CLIENT_SOURCE" "$REVOKE_SOURCE" "$INSTALL_SOURCE"; do
@@ -422,6 +469,7 @@ ensure_cross_subnet_routes
 ensure_tcp_firewall
 ensure_tcp_selinux_port
 ensure_initial_client_ccd
+migrate_openvpn_instances
 restart_openvpn
 
 ln -sfn "$CLIENT_TARGET" "$CLIENT_LINK"
@@ -435,3 +483,4 @@ echo "TCP CCD dir: $TCP_CCD_DIR"
 echo "Client profiles dir: $CLIENT_DIR"
 echo "Client creation command: $CLIENT_LINK [--proto udp|tcp] <client-name>"
 echo "Client revocation command: $REVOKE_LINK <client-name>"
+print_post_install_checks

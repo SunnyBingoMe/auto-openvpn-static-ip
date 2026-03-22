@@ -115,12 +115,14 @@ pwd_auth_file="$1"
 pwd_cred_store="/etc/openvpn/server/client-pwd-auth"
 client_file="$pwd_cred_store/${common_name}.credentials"
 
+# Clients without a credentials file fall back to cert-only auth.
+[ -f "$client_file" ] || exit 0
 [ -f "$pwd_auth_file" ] || exit 1
-[ -f "$client_file" ] || exit 1
 
 username="$(sed -n '1p' "$pwd_auth_file")"
 password="$(sed -n '2p' "$pwd_auth_file")"
 [ -n "$username" ] || exit 1
+[ -n "$password" ] || exit 1
 
 while IFS=: read -r stored_user stored_password; do
   [ "$stored_user" = "$username" ] || continue

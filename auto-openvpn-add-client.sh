@@ -7,6 +7,7 @@ PROFILE_PROTO="udp"
 CN=""
 PWD_AUTH_USERNAME=""
 PWD_AUTH_PASSWORD=""
+USE_PWD_AUTH=""
 
 SCRIPT_PATH="$(readlink -f "$0")"
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
@@ -77,9 +78,26 @@ validate_client_name() {
   fi
 }
 
+prompt_auth_mode() {
+  local auth_choice
+
+  echo
+  read -r -p "要求客户端密码登录么？ Require user/pass for this client? [y/N]: " auth_choice
+  case "$auth_choice" in
+    [Yy]|[Yy][Ee][Ss])
+      USE_PWD_AUTH="yes"
+      ;;
+    *)
+      USE_PWD_AUTH="no"
+      ;;
+  esac
+}
+
 prompt_pwd_auth_credentials() {
   local username_input
   local password_confirm
+
+  [ "$USE_PWD_AUTH" = "yes" ] || return 0
 
   echo
   read -r -p "Username [${CN}]: " username_input
@@ -90,16 +108,21 @@ prompt_pwd_auth_credentials() {
   fi
 
   while true; do
-    read -r -s -p "Password [empty]: " PWD_AUTH_PASSWORD
+    read -r -s -p "Password [required]: " PWD_AUTH_PASSWORD
     echo
-    read -r -s -p "Confirm Password [empty]: " password_confirm
+    if [ -z "$PWD_AUTH_PASSWORD" ]; then
+      echo "密码不可为空 Pass canNOT be empty." >&2
+      continue
+    fi
+
+    read -r -s -p "确认 Confirm Password: " password_confirm
     echo
 
     if [ "$PWD_AUTH_PASSWORD" = "$password_confirm" ]; then
       break
     fi
 
-    echo "Passwords do not match. Please try again." >&2
+    echo "两次不同 Passwords do not match. Please try again." >&2
   done
 }
 
@@ -127,6 +150,13 @@ store_pwd_auth_credentials() {
   printf '%s:%s\n' "$PWD_AUTH_USERNAME" "$escaped_password" > "$pwd_auth_file"
   chown root:"$runtime_group" "$pwd_auth_file"
   chmod 640 "$pwd_auth_file"
+}
+
+remove_pwd_auth_credentials() {
+  local pwd_auth_file
+
+  pwd_auth_file="${SERVER_DIR}/client-pwd-auth/${CN}.credentials"
+  rm -f "$pwd_auth_file"
 }
 
 require_root() {
@@ -277,6 +307,7 @@ rewrite_profile_for_protocol() {
   local target_file="$2"
   local server_conf="$3"
   local peer_server_conf="$4"
+  local use_pwd_auth="$5"
   local target_dir
   local target_name
   local tmp_file
@@ -313,7 +344,8 @@ rewrite_profile_for_protocol() {
       -v local_route_network="$local_route_network" \
       -v local_route_mask="$local_route_mask" \
       -v peer_route_network="$peer_route_network" \
-      -v peer_route_mask="$peer_route_mask" '
+      -v peer_route_mask="$peer_route_mask" \
+      -v use_pwd_auth="$use_pwd_auth" '
     $1 == "proto" {
       print "proto " proto
       next
@@ -323,6 +355,9 @@ rewrite_profile_for_protocol() {
       next
     }
     $1 == "route" {
+      next
+    }
+    $1 == "auth-user-pass" && use_pwd_auth != "yes" {
       next
     }
     { print }
@@ -354,6 +389,7 @@ esac
 require_root "${ORIGINAL_ARGS[@]}"
 parse_args "$@"
 validate_client_name
+prompt_auth_mode
 prompt_pwd_auth_credentials
 
 CLIENT_DIR="$(resolve_client_dir)"
@@ -403,7 +439,11 @@ fi
 
 mkdir -p "$CLIENT_DIR"
 mkdir -p "$UDP_CCD_DIR" "$TCP_CCD_DIR"
-store_pwd_auth_credentials
+if [ "$USE_PWD_AUTH" = "yes" ]; then
+  store_pwd_auth_credentials
+else
+  remove_pwd_auth_credentials
+fi
 
 INSTALL_OUTPUT=""
 if [ -f "${SERVER_DIR}/easy-rsa/pki/issued/${CN}.crt" ]; then
@@ -440,7 +480,7 @@ fi
 PROFILE_OUTPUT="$(profile_output_name)"
 PROFILE_TARGET="${CLIENT_DIR}/${PROFILE_OUTPUT}"
 
-rewrite_profile_for_protocol "$PROFILE_SOURCE" "$PROFILE_TARGET" "$SERVER_CONF" "$PEER_SERVER_CONF"
+rewrite_profile_for_protocol "$PROFILE_SOURCE" "$PROFILE_TARGET" "$SERVER_CONF" "$PEER_SERVER_CONF" "$USE_PWD_AUTH"
 rm -f "$PROFILE_SOURCE"
 chmod 600 "$PROFILE_TARGET"
 

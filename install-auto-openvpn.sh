@@ -56,6 +56,34 @@ LEGACY_OPENVPN_DROPIN_DIR="${SYSTEMD_DIR}/openvpn-server@server.service.d"
 UDP_OPENVPN_DROPIN_DIR="${SYSTEMD_DIR}/openvpn-server@server-udp.service.d"
 TCP_OPENVPN_DROPIN_DIR="${SYSTEMD_DIR}/openvpn-server@server-tcp.service.d"
 
+ask_yes_no() {
+  local prompt="$1"
+  local default_answer="$2"
+  local reply
+
+  while true; do
+    if [ "$default_answer" = "y" ]; then
+      read -r -p "$prompt [Y/n]: " reply
+      reply="${reply:-Y}"
+    else
+      read -r -p "$prompt [y/N]: " reply
+      reply="${reply:-N}"
+    fi
+
+    case "$reply" in
+      [Yy]|[Yy][Ee][Ss])
+        return 0
+        ;;
+      [Nn]|[Nn][Oo])
+        return 1
+        ;;
+      *)
+        echo "Please answer yes or no."
+        ;;
+    esac
+  done
+}
+
 run_root_cmd() {
   if [ "$(id -u)" -eq 0 ]; then
     "$@"
@@ -74,6 +102,123 @@ deploy_file() {
   local mode="$3"
 
   install -m "$mode" "$source_file" "$target_file"
+}
+
+install_exists() {
+  [ -f "$SERVER_CONF" ] || [ -f "${SERVER_DIR}/server.conf" ] || [ -d "$EASYRSA_DIR" ]
+}
+
+refresh_client_common_template() {
+  local tmp_file
+  local udp_network
+  local udp_mask
+
+  if [ ! -f "$CLIENT_COMMON_FILE" ]; then
+    echo "Client template not found for overwrite: $CLIENT_COMMON_FILE" >&2
+    echo "Refusing to guess the advertised client endpoint. Re-run a fresh install or restore a valid template first." >&2
+    exit 1
+  fi
+
+  udp_network="$(extract_server_network "$SERVER_CONF")"
+  udp_mask="$(extract_server_mask "$SERVER_CONF")"
+  [ -n "$udp_network" ] || udp_network="172.22.0.0"
+  [ -n "$udp_mask" ] || udp_mask="255.255.0.0"
+  tmp_file="$(mktemp "${CLIENT_COMMON_FILE}.tmp.XXXXXX")"
+
+  awk -v udp_network="$udp_network" -v udp_mask="$udp_mask" '
+    BEGIN {
+      saw_auth_user_pass = 0
+      saw_ignore_unknown = 0
+      saw_redirect_filter = 0
+      saw_dns_filter = 0
+      saw_route_nopull = 0
+      saw_route = 0
+    }
+    $1 == "auth-user-pass" {
+      if (!saw_auth_user_pass) {
+        print "auth-user-pass"
+        saw_auth_user_pass = 1
+      }
+      next
+    }
+    $1 == "ignore-unknown-option" {
+      if (!saw_ignore_unknown) {
+        print "ignore-unknown-option block-outside-dns block-ipv6"
+        saw_ignore_unknown = 1
+      }
+      next
+    }
+    $1 == "pull-filter" && $2 == "ignore" && $3 == "redirect-gateway" {
+      if (!saw_redirect_filter) {
+        print "pull-filter ignore redirect-gateway"
+        saw_redirect_filter = 1
+      }
+      next
+    }
+    $1 == "pull-filter" && $2 == "ignore" && ($3 == "dhcp-option" || $3 == "\"dhcp-option") {
+      if (!saw_dns_filter) {
+        print "pull-filter ignore \"dhcp-option DNS\""
+        saw_dns_filter = 1
+      }
+      next
+    }
+    $1 == "route-nopull" {
+      if (!saw_route_nopull) {
+        print "route-nopull"
+        saw_route_nopull = 1
+      }
+      next
+    }
+    $1 == "route" {
+      if (!saw_route) {
+        print "route " udp_network " " udp_mask
+        saw_route = 1
+      }
+      next
+    }
+    {
+      print
+    }
+    END {
+      if (!saw_auth_user_pass) {
+        print "auth-user-pass"
+      }
+      if (!saw_ignore_unknown) {
+        print "ignore-unknown-option block-outside-dns block-ipv6"
+      }
+      if (!saw_redirect_filter) {
+        print "pull-filter ignore redirect-gateway"
+      }
+      if (!saw_dns_filter) {
+        print "pull-filter ignore \"dhcp-option DNS\""
+      }
+      if (!saw_route_nopull) {
+        print "route-nopull"
+      }
+      if (!saw_route) {
+        print "route " udp_network " " udp_mask
+      }
+    }
+  ' "$CLIENT_COMMON_FILE" > "$tmp_file"
+
+  mv "$tmp_file" "$CLIENT_COMMON_FILE"
+}
+
+confirm_overwrite_existing_install() {
+  if ! install_exists; then
+    return 0
+  fi
+
+  echo "Detected an existing OpenVPN installation under $SERVER_DIR."
+  echo "Overwrite will keep current PKI/certs, tc.key, CCD, IPP, and password-auth state when possible,"
+  echo "then regenerate helper scripts, derived templates, and compatibility links."
+
+  if ask_yes_no "Overwrite the existing installation and refresh generated config?" "y"; then
+    return 0
+  fi
+
+  echo "Install cancelled."
+  exit 0
 }
 
 ensure_server_conf_has_ccd() {
@@ -456,6 +601,8 @@ for required_file in "$ASSIGN_SOURCE" "$CLIENT_SOURCE" "$REVOKE_SOURCE" "$INSTAL
   fi
 done
 
+confirm_overwrite_existing_install
+
 if { [ ! -f "$SERVER_CONF" ] && [ ! -f "${SERVER_DIR}/server.conf" ]; } || [ ! -d "$EASYRSA_DIR" ]; then
   run_root_cmd bash "$INSTALL_SOURCE" --auto
 fi
@@ -470,6 +617,7 @@ deploy_file "$ASSIGN_SOURCE" "$ASSIGN_TARGET" 700
 deploy_pwd_auth_verify_script
 
 ensure_common_artifact_names
+refresh_client_common_template
 ensure_pwd_auth_access
 
 chmod 700 "$UDP_CCD_DIR"

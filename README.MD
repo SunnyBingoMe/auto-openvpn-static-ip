@@ -13,6 +13,9 @@ sudo sh ./install-auto-openvpn.sh
 ## 效果
 
 - 运行 `bash install-auto-openvpn.sh` 时，如果当前用户不是 root 但可以使用 `sudo`，脚本会自动提权继续执行。
+- 如果检测到机器上已经存在 `/etc/openvpn/server` 安装，安装脚本会先询问是否覆盖；默认答案为覆盖。
+- 覆盖现有安装时，会尽量保留当前客户端继续连接所依赖的状态，例如 `easy-rsa`/证书、`tc.key`、`client-pwd-auth`、`ccd-udp`、`ccd-tcp`、`ipp-udp.txt`、`ipp-tcp.txt`。
+- 覆盖现有安装时，会重建辅助脚本、兼容软链和客户端模板中的派生行；例如会把 `pull-filter ignore dhcp-option DNS` 规范化为 `pull-filter ignore "dhcp-option DNS"`，但不会擅自猜测或改写已有模板中的 `remote` 终端地址。
 - 安装完成后，OpenVPN 服务端配置和辅助脚本会放到 `/etc/openvpn` 体系下。
 - 运行 `sudo auto-openvpn-add-client.sh my_client_name` 时，会自动：
   - 创建客户端证书和 `.ovpn` 配置文件
@@ -56,6 +59,7 @@ bash install-auto-openvpn.sh
 - 自动向 UDP 客户端推送 `172.23.0.0/16` 路由，向 TCP 客户端推送 `172.22.0.0/16` 路由
 - 创建 `/etc/openvpn/ccd-udp`、`/etc/openvpn/ccd-tcp` 和 `/etc/openvpn/client-udp-tcp`，并保留兼容软链
 - 创建 `client-common-udp-tcp.txt` 作为 UDP/TCP 通用客户端模板，并保留兼容软链
+- 如果是覆盖已有安装，则在保留现有连接关键状态的前提下，按当前仓库逻辑规范化 `client-common-udp-tcp.txt` 中的派生配置行
 - 设置相应权限
 - 部署辅助脚本到 `/etc/openvpn/server`
 

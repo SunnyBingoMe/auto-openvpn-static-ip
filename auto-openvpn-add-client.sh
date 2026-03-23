@@ -7,7 +7,7 @@ PROFILE_PROTO="udp"
 CN=""
 PWD_AUTH_USERNAME=""
 PWD_AUTH_PASSWORD=""
-USE_PWD_AUTH=""
+PWD_AUTH_PASSWORD_CONFIRM=""
 
 SCRIPT_PATH="$(readlink -f "$0")"
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
@@ -74,30 +74,35 @@ validate_client_name() {
   if [[ ! "$CN" =~ ^[A-Za-z0-9_-]+$ ]]; then
     echo "Invalid client name: $CN" >&2
     echo "Allowed characters: letters, numbers, '-' and '_'" >&2
+    echo "The client name is also used as the default embedded username and password." >&2
     exit 1
   fi
+}
+
+generate_random_password() {
+  python3 - <<'PY'
+import secrets
+print(secrets.token_urlsafe(18))
+PY
 }
 
 prompt_auth_mode() {
   local auth_choice
 
   echo
-  read -r -p "要求客户端密码登录么？ Require user/pass for this client? [y/N]: " auth_choice
+  read -r -p "要求客户端密码登录么？ Require embedded user/pass for this client? [Y/n]: " auth_choice
   case "$auth_choice" in
-    [Yy]|[Yy][Ee][Ss])
-      USE_PWD_AUTH="yes"
+    [Nn]|[Nn][Oo])
+      echo "未启用手动密码输入，将使用客户端名作为默认用户名和密码并内嵌到 .ovpn。"
       ;;
     *)
-      USE_PWD_AUTH="no"
+      echo "将为该客户端生成带内嵌用户名密码的 .ovpn。"
       ;;
   esac
 }
 
 prompt_pwd_auth_credentials() {
   local username_input
-  local password_confirm
-
-  [ "$USE_PWD_AUTH" = "yes" ] || return 0
 
   echo
   read -r -p "Username [${CN}]: " username_input
@@ -107,23 +112,28 @@ prompt_pwd_auth_credentials() {
     PWD_AUTH_USERNAME="$username_input"
   fi
 
-  while true; do
-    read -r -s -p "Password [required]: " PWD_AUTH_PASSWORD
-    echo
-    if [ -z "$PWD_AUTH_PASSWORD" ]; then
-      echo "密码不可为空 Pass canNOT be empty." >&2
-      continue
-    fi
+  read -r -s -p "Password [${CN}; leave empty to use client name]: " PWD_AUTH_PASSWORD
+  echo
+  read -r -s -p "确认 Confirm Password [${CN}; leave empty to use client name]: " PWD_AUTH_PASSWORD_CONFIRM
+  echo
 
-    read -r -s -p "确认 Confirm Password: " password_confirm
-    echo
+  if [ -z "$PWD_AUTH_PASSWORD" ] && [ -z "$PWD_AUTH_PASSWORD_CONFIRM" ]; then
+    PWD_AUTH_PASSWORD="$CN"
+    echo "已使用客户端名作为默认内嵌密码。 Using client name as embedded password."
+    return 0
+  fi
 
-    if [ "$PWD_AUTH_PASSWORD" = "$password_confirm" ]; then
-      break
-    fi
+  if [ -z "$PWD_AUTH_PASSWORD" ] || [ -z "$PWD_AUTH_PASSWORD_CONFIRM" ]; then
+    PWD_AUTH_PASSWORD="$CN"
+    echo "检测到空密码输入，已回退为客户端名密码。 Falling back to client name password."
+    return 0
+  fi
 
-    echo "两次不同 Passwords do not match. Please try again." >&2
-  done
+  if [ "$PWD_AUTH_PASSWORD" != "$PWD_AUTH_PASSWORD_CONFIRM" ]; then
+    echo "两次不同 Passwords do not match. Falling back to generated embedded password." >&2
+    PWD_AUTH_PASSWORD="$(generate_random_password)"
+    return 0
+  fi
 }
 
 store_pwd_auth_credentials() {
@@ -157,6 +167,55 @@ remove_pwd_auth_credentials() {
 
   pwd_auth_file="${SERVER_DIR}/client-pwd-auth/${CN}.credentials"
   rm -f "$pwd_auth_file"
+}
+
+embed_inline_auth_block() {
+  local target_file="$1"
+  local tmp_file
+
+  tmp_file="$(mktemp "${target_file}.tmp.XXXXXX")"
+  awk -v username="$PWD_AUTH_USERNAME" -v password="$PWD_AUTH_PASSWORD" '
+    BEGIN {
+      inserted = 0
+      in_auth_block = 0
+    }
+    /^<auth-user-pass>$/ {
+      in_auth_block = 1
+      next
+    }
+    /^<\/auth-user-pass>$/ {
+      in_auth_block = 0
+      next
+    }
+    in_auth_block {
+      next
+    }
+    $1 == "auth-user-pass" {
+      if (!inserted) {
+        print "auth-user-pass"
+        print "<auth-user-pass>"
+        print username
+        print password
+        print "</auth-user-pass>"
+        inserted = 1
+      }
+      next
+    }
+    {
+      print
+    }
+    END {
+      if (!inserted) {
+        print "auth-user-pass"
+        print "<auth-user-pass>"
+        print username
+        print password
+        print "</auth-user-pass>"
+      }
+    }
+  ' "$target_file" > "$tmp_file"
+
+  mv -f "$tmp_file" "$target_file"
 }
 
 require_root() {
@@ -239,6 +298,32 @@ find_generated_profile() {
   return 1
 }
 
+client_pki_complete() {
+  [ -f "${SERVER_DIR}/easy-rsa/pki/issued/${CN}.crt" ] \
+    && [ -f "${SERVER_DIR}/easy-rsa/pki/private/${CN}.key" ]
+}
+
+validate_generated_client_artifacts() {
+  local profile_file="$1"
+
+  if ! client_pki_complete; then
+    echo "client PKI artifacts are incomplete for ${CN}" >&2
+    echo "Expected cert: ${SERVER_DIR}/easy-rsa/pki/issued/${CN}.crt" >&2
+    echo "Expected key: ${SERVER_DIR}/easy-rsa/pki/private/${CN}.key" >&2
+    exit 1
+  fi
+
+  if [ ! -f "$profile_file" ]; then
+    echo "generated profile missing: $profile_file" >&2
+    exit 1
+  fi
+
+  if ! grep -Fqs "<cert>" "$profile_file" || ! grep -Fqs "<key>" "$profile_file"; then
+    echo "generated profile is incomplete: $profile_file" >&2
+    exit 1
+  fi
+}
+
 extract_generated_profile_from_output() {
   awk -F': ' '/Configuration available in: / { path=$2 } END { if (path != "") print path }'
 }
@@ -307,7 +392,6 @@ rewrite_profile_for_protocol() {
   local target_file="$2"
   local server_conf="$3"
   local peer_server_conf="$4"
-  local use_pwd_auth="$5"
   local target_dir
   local target_name
   local tmp_file
@@ -344,8 +428,7 @@ rewrite_profile_for_protocol() {
       -v local_route_network="$local_route_network" \
       -v local_route_mask="$local_route_mask" \
       -v peer_route_network="$peer_route_network" \
-      -v peer_route_mask="$peer_route_mask" \
-      -v use_pwd_auth="$use_pwd_auth" '
+      -v peer_route_mask="$peer_route_mask" '
     $1 == "proto" {
       print "proto " proto
       next
@@ -355,9 +438,6 @@ rewrite_profile_for_protocol() {
       next
     }
     $1 == "route" {
-      next
-    }
-    $1 == "auth-user-pass" && use_pwd_auth != "yes" {
       next
     }
     { print }
@@ -439,14 +519,10 @@ fi
 
 mkdir -p "$CLIENT_DIR"
 mkdir -p "$UDP_CCD_DIR" "$TCP_CCD_DIR"
-if [ "$USE_PWD_AUTH" = "yes" ]; then
-  store_pwd_auth_credentials
-else
-  remove_pwd_auth_credentials
-fi
+store_pwd_auth_credentials
 
 INSTALL_OUTPUT=""
-if [ -f "${SERVER_DIR}/easy-rsa/pki/issued/${CN}.crt" ]; then
+if client_pki_complete; then
   INSTALL_OUTPUT="$(bash "$INSTALL_SCRIPT" --exportclient "$CN")"
 else
   INSTALL_OUTPUT="$(bash "$INSTALL_SCRIPT" --addclient "$CN")"
@@ -480,8 +556,10 @@ fi
 PROFILE_OUTPUT="$(profile_output_name)"
 PROFILE_TARGET="${CLIENT_DIR}/${PROFILE_OUTPUT}"
 
-rewrite_profile_for_protocol "$PROFILE_SOURCE" "$PROFILE_TARGET" "$SERVER_CONF" "$PEER_SERVER_CONF" "$USE_PWD_AUTH"
+rewrite_profile_for_protocol "$PROFILE_SOURCE" "$PROFILE_TARGET" "$SERVER_CONF" "$PEER_SERVER_CONF"
 rm -f "$PROFILE_SOURCE"
+embed_inline_auth_block "$PROFILE_TARGET"
+validate_generated_client_artifacts "$PROFILE_TARGET"
 chmod 600 "$PROFILE_TARGET"
 
 if [ -n "${SUDO_USER:-}" ] && getent group "$SUDO_USER" >/dev/null 2>&1; then

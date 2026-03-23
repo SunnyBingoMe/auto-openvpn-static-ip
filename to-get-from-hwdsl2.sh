@@ -1044,6 +1044,12 @@ get_export_dir() {
 
 new_client() {
 	get_export_dir
+	if [ ! -f "/etc/openvpn/server/easy-rsa/pki/issued/$client.crt" ]; then
+		exiterr "Missing client certificate: /etc/openvpn/server/easy-rsa/pki/issued/$client.crt"
+	fi
+	if [ ! -f "/etc/openvpn/server/easy-rsa/pki/private/$client.key" ]; then
+		exiterr "Missing client private key: /etc/openvpn/server/easy-rsa/pki/private/$client.key"
+	fi
 	# Generates the custom client.ovpn
 	{
 	cat /etc/openvpn/server/client-common.txt
@@ -1234,8 +1240,12 @@ build_client_config() {
 	cd /etc/openvpn/server/easy-rsa/ || exit 1
 	(
 		set -x
-		./easyrsa --batch --days=3650 build-client-full "$client" nopass >/dev/null 2>&1
+		./easyrsa --batch --days=3650 build-client-full "$client" nopass
 	)
+	[ -f "/etc/openvpn/server/easy-rsa/pki/issued/$client.crt" ] \
+		|| exiterr "Client certificate was not created for $client"
+	[ -f "/etc/openvpn/server/easy-rsa/pki/private/$client.key" ] \
+		|| exiterr "Client private key was not created for $client"
 }
 
 print_client_action() {

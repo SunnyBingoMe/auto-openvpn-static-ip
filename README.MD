@@ -84,7 +84,8 @@ sudo auto-openvpn-add-client.sh --proto tcp my_client_name
 - 当客户端证书已存在时，调用 `/etc/openvpn/server/to-get-from-hwdsl2.sh --exportclient my_client_name`
 - 询问该客户端的 OpenVPN 登录用户名，默认值为 `my_client_name`
 - 询问该客户端的 OpenVPN 登录密码；密码会直接内嵌到导出的 `.ovpn` 中
-- 如果选择不手动设密码，或者两次密码都输入为空，脚本会使用客户端名作为默认用户名和默认密码，并内嵌到 `.ovpn` 中
+- 如果选择不手动设密码，脚本不会继续询问用户名和密码，而是直接使用客户端名作为默认用户名和默认密码，并内嵌到 `.ovpn` 中
+- 如果选择手动设密码，但两次密码都输入为空，脚本会使用客户端名作为默认用户名和默认密码，并内嵌到 `.ovpn` 中
 - 调用 `/etc/openvpn/server/to-assign-ip-to-client.sh my_client_name`
 - 在 `/etc/openvpn/ccd-udp/my_client_name` 写入类似下面的内容：
 

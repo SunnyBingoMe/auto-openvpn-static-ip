@@ -8,6 +8,7 @@ CN=""
 PWD_AUTH_USERNAME=""
 PWD_AUTH_PASSWORD=""
 PWD_AUTH_PASSWORD_CONFIRM=""
+USE_MANUAL_PWD_AUTH="yes"
 
 SCRIPT_PATH="$(readlink -f "$0")"
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
@@ -93,9 +94,11 @@ prompt_auth_mode() {
   read -r -p "要求客户端密码登录么？ Require embedded user/pass for this client? [Y/n]: " auth_choice
   case "$auth_choice" in
     [Nn]|[Nn][Oo])
+      USE_MANUAL_PWD_AUTH="no"
       echo "未启用手动密码输入，将使用客户端名作为默认用户名和密码并内嵌到 .ovpn。"
       ;;
     *)
+      USE_MANUAL_PWD_AUTH="yes"
       echo "将为该客户端生成带内嵌用户名密码的 .ovpn。"
       ;;
   esac
@@ -103,6 +106,12 @@ prompt_auth_mode() {
 
 prompt_pwd_auth_credentials() {
   local username_input
+
+  if [ "$USE_MANUAL_PWD_AUTH" != "yes" ]; then
+    PWD_AUTH_USERNAME="$CN"
+    PWD_AUTH_PASSWORD="$CN"
+    return 0
+  fi
 
   echo
   read -r -p "Username [${CN}]: " username_input

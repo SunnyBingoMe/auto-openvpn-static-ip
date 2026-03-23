@@ -131,8 +131,10 @@ route 172.22.0.0 255.255.0.0
 - 同一个客户端名在 UDP 和 TCP 下会分别写入 `/etc/openvpn/ccd-udp` 与 `/etc/openvpn/ccd-tcp`
 - UDP 客户端默认访问 `172.22.0.0/16`，TCP 客户端默认访问 `172.23.0.0/16`
 - UDP 与 TCP 两个 VPN 子网默认可以双向访问
+- 同一个客户端名可以导出两份协议不同的 profile（`.udp.ovpn` / `.tcp.ovpn`），它们共享同一套客户端证书与私钥
 
 注意：同一个客户端名的 UDP/TCP 配置设计上是“按需选择传输方式”，不是为了让同一个证书同时双连。
+注意：`auto-openvpn-revoke-client.sh` 选择 `udp` 或 `tcp` 时，只删除该协议的 CCD / IPP / profile；只有选择 `all` 时，才会吊销共享证书并删除两侧 profile。
 
 ## 权限说明
 

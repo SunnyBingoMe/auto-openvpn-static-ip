@@ -4,6 +4,7 @@ set -euo pipefail
 ORIGINAL_ARGS=("$@")
 
 CN=""
+REVOKE_SCOPE="all"
 
 SCRIPT_PATH="$(readlink -f "$0")"
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
@@ -106,6 +107,54 @@ resolve_client_dir() {
   printf '%s\n' "$DEFAULT_CLIENT_DIR"
 }
 
+has_udp_client() {
+  [ -f "${UDP_CCD_DIR}/${CN}" ] || grep -qs -- "^${CN}," "$UDP_IPP_FILE" 2>/dev/null
+}
+
+has_tcp_client() {
+  [ -f "${TCP_CCD_DIR}/${CN}" ] || grep -qs -- "^${CN}," "$TCP_IPP_FILE" 2>/dev/null
+}
+
+prompt_revoke_scope() {
+  local udp_exists
+  local tcp_exists
+  local answer
+
+  udp_exists=0
+  tcp_exists=0
+  has_udp_client && udp_exists=1
+  has_tcp_client && tcp_exists=1
+
+  if [ "$udp_exists" -eq 1 ] && [ "$tcp_exists" -eq 1 ]; then
+    echo
+    read -r -p "Found both UDP and TCP client entries for ${CN}. Revoke which protocol? [udp/tcp/all] (default: all): " answer
+    answer="${answer:-all}"
+    case "$answer" in
+      udp|tcp|all)
+        REVOKE_SCOPE="$answer"
+        ;;
+      *)
+        echo "Invalid selection: $answer" >&2
+        echo "Allowed values: udp, tcp, all" >&2
+        exit 1
+        ;;
+    esac
+    return 0
+  fi
+
+  if [ "$udp_exists" -eq 1 ]; then
+    REVOKE_SCOPE="udp"
+    return 0
+  fi
+
+  if [ "$tcp_exists" -eq 1 ]; then
+    REVOKE_SCOPE="tcp"
+    return 0
+  fi
+
+  REVOKE_SCOPE="all"
+}
+
 remove_ipp_entry() {
   local ipp_file="$1"
   local tmp_file
@@ -131,31 +180,59 @@ cleanup_client_files() {
 
   client_dir="$(resolve_client_dir)"
 
-  rm -f \
-    "${UDP_CCD_DIR}/${CN}" \
-    "${TCP_CCD_DIR}/${CN}" \
-    "${EASYRSA_DIR}/pki/issued/${CN}.crt" \
-    "${EASYRSA_DIR}/pki/private/${CN}.key" \
-    "${EASYRSA_DIR}/pki/reqs/${CN}.req" \
-    "${client_dir}/${CN}.ovpn" \
-    "${client_dir}/${CN}.udp.ovpn" \
-    "${client_dir}/${CN}.tcp.ovpn" \
-    "/root/${CN}.ovpn" \
-    "/root/${CN}.udp.ovpn" \
-    "/root/${CN}.tcp.ovpn" \
-    "${PWD}/${CN}.ovpn" \
-    "${PWD}/${CN}.udp.ovpn" \
-    "${PWD}/${CN}.tcp.ovpn" \
-    "${SCRIPT_DIR}/${CN}.ovpn" \
-    "${SCRIPT_DIR}/${CN}.udp.ovpn" \
-    "${SCRIPT_DIR}/${CN}.tcp.ovpn"
+  case "$REVOKE_SCOPE" in
+    udp)
+      rm -f \
+        "${UDP_CCD_DIR}/${CN}" \
+        "${client_dir}/${CN}.udp.ovpn" \
+        "/root/${CN}.udp.ovpn" \
+        "${PWD}/${CN}.udp.ovpn" \
+        "${SCRIPT_DIR}/${CN}.udp.ovpn"
+      if [ "$CCD_DIR" = "$UDP_CCD_DIR" ]; then
+        rm -f "${CCD_DIR}/${CN}"
+      fi
+      remove_ipp_entry "$UDP_IPP_FILE"
+      ;;
+    tcp)
+      rm -f \
+        "${TCP_CCD_DIR}/${CN}" \
+        "${client_dir}/${CN}.tcp.ovpn" \
+        "/root/${CN}.tcp.ovpn" \
+        "${PWD}/${CN}.tcp.ovpn" \
+        "${SCRIPT_DIR}/${CN}.tcp.ovpn"
+      if [ "$CCD_DIR" = "$TCP_CCD_DIR" ]; then
+        rm -f "${CCD_DIR}/${CN}"
+      fi
+      remove_ipp_entry "$TCP_IPP_FILE"
+      ;;
+    all)
+      rm -f \
+        "${UDP_CCD_DIR}/${CN}" \
+        "${TCP_CCD_DIR}/${CN}" \
+        "${EASYRSA_DIR}/pki/issued/${CN}.crt" \
+        "${EASYRSA_DIR}/pki/private/${CN}.key" \
+        "${EASYRSA_DIR}/pki/reqs/${CN}.req" \
+        "${client_dir}/${CN}.ovpn" \
+        "${client_dir}/${CN}.udp.ovpn" \
+        "${client_dir}/${CN}.tcp.ovpn" \
+        "/root/${CN}.ovpn" \
+        "/root/${CN}.udp.ovpn" \
+        "/root/${CN}.tcp.ovpn" \
+        "${PWD}/${CN}.ovpn" \
+        "${PWD}/${CN}.udp.ovpn" \
+        "${PWD}/${CN}.tcp.ovpn" \
+        "${SCRIPT_DIR}/${CN}.ovpn" \
+        "${SCRIPT_DIR}/${CN}.udp.ovpn" \
+        "${SCRIPT_DIR}/${CN}.tcp.ovpn"
 
-  if [ "$CCD_DIR" != "$UDP_CCD_DIR" ] && [ "$CCD_DIR" != "$TCP_CCD_DIR" ]; then
-    rm -f "${CCD_DIR}/${CN}"
-  fi
+      if [ "$CCD_DIR" != "$UDP_CCD_DIR" ] && [ "$CCD_DIR" != "$TCP_CCD_DIR" ]; then
+        rm -f "${CCD_DIR}/${CN}"
+      fi
 
-  remove_ipp_entry "$UDP_IPP_FILE"
-  remove_ipp_entry "$TCP_IPP_FILE"
+      remove_ipp_entry "$UDP_IPP_FILE"
+      remove_ipp_entry "$TCP_IPP_FILE"
+      ;;
+  esac
 }
 
 case "${1:-}" in
@@ -167,6 +244,7 @@ esac
 require_root "${ORIGINAL_ARGS[@]}"
 parse_args "$@"
 validate_client_name
+prompt_revoke_scope
 
 INSTALL_SCRIPT="$(find_install_script || true)"
 
@@ -184,7 +262,9 @@ if [ ! -f "$INSTALL_SCRIPT" ]; then
   exit 1
 fi
 
-bash "$INSTALL_SCRIPT" -y --revokeclient "$CN"
+if [ "$REVOKE_SCOPE" = "all" ]; then
+  bash "$INSTALL_SCRIPT" -y --revokeclient "$CN"
+fi
 cleanup_client_files
 
-echo "REVOKED: ${CN}"
+echo "REVOKED (${REVOKE_SCOPE}): ${CN}"

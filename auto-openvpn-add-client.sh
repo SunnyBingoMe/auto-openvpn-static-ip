@@ -280,13 +280,25 @@ find_assign_script() {
 
 find_generated_profile() {
   local user_home=""
+  local profile_name
+
+  profile_name="$(profile_output_name)"
 
   if [ -n "${SUDO_USER:-}" ]; then
     user_home="$(getent passwd "$SUDO_USER" 2>/dev/null | cut -d: -f6 || true)"
+    if [ -n "$user_home" ] && [ -f "${user_home}/${profile_name}" ]; then
+      printf '%s\n' "${user_home}/${profile_name}"
+      return 0
+    fi
     if [ -n "$user_home" ] && [ -f "${user_home}/${CN}.ovpn" ]; then
       printf '%s\n' "${user_home}/${CN}.ovpn"
       return 0
     fi
+  fi
+
+  if [ -f "/root/${profile_name}" ]; then
+    printf '%s\n' "/root/${profile_name}"
+    return 0
   fi
 
   if [ -f "/root/${CN}.ovpn" ]; then
@@ -294,8 +306,18 @@ find_generated_profile() {
     return 0
   fi
 
+  if [ -f "${PWD}/${profile_name}" ]; then
+    printf '%s\n' "${PWD}/${profile_name}"
+    return 0
+  fi
+
   if [ -f "${PWD}/${CN}.ovpn" ]; then
     printf '%s\n' "${PWD}/${CN}.ovpn"
+    return 0
+  fi
+
+  if [ -f "${SCRIPT_DIR}/${profile_name}" ]; then
+    printf '%s\n' "${SCRIPT_DIR}/${profile_name}"
     return 0
   fi
 
@@ -307,9 +329,43 @@ find_generated_profile() {
   return 1
 }
 
-client_pki_complete() {
-  [ -f "${SERVER_DIR}/easy-rsa/pki/issued/${CN}.crt" ] \
-    && [ -f "${SERVER_DIR}/easy-rsa/pki/private/${CN}.key" ]
+should_remove_profile_source() {
+  local source_file="$1"
+  local target_file="$2"
+
+  [ "$source_file" != "$target_file" ] || return 1
+
+  case "$source_file" in
+    */"${CN}.ovpn")
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+cleanup_source_profile() {
+  local source_file="$1"
+  local target_file="$2"
+
+  if should_remove_profile_source "$source_file" "$target_file"; then
+    rm -f "$source_file"
+  fi
+}
+
+validate_profile_embeds() {
+  local profile_file="$1"
+
+  if ! grep -Fqs '<auth-user-pass>' "$profile_file"; then
+    echo "generated profile is missing embedded credentials: $profile_file" >&2
+    exit 1
+  fi
+
+  if ! grep -Fqs "$PWD_AUTH_USERNAME" "$profile_file" || ! grep -Fqs "$PWD_AUTH_PASSWORD" "$profile_file"; then
+    echo "generated profile does not contain expected embedded credentials: $profile_file" >&2
+    exit 1
+  fi
 }
 
 validate_generated_client_artifacts() {
@@ -331,6 +387,12 @@ validate_generated_client_artifacts() {
     echo "generated profile is incomplete: $profile_file" >&2
     exit 1
   fi
+
+  validate_profile_embeds "$profile_file"
+}
+client_pki_complete() {
+  [ -f "${SERVER_DIR}/easy-rsa/pki/issued/${CN}.crt" ] \
+    && [ -f "${SERVER_DIR}/easy-rsa/pki/private/${CN}.key" ]
 }
 
 extract_generated_profile_from_output() {
@@ -566,7 +628,7 @@ PROFILE_OUTPUT="$(profile_output_name)"
 PROFILE_TARGET="${CLIENT_DIR}/${PROFILE_OUTPUT}"
 
 rewrite_profile_for_protocol "$PROFILE_SOURCE" "$PROFILE_TARGET" "$SERVER_CONF" "$PEER_SERVER_CONF"
-rm -f "$PROFILE_SOURCE"
+cleanup_source_profile "$PROFILE_SOURCE" "$PROFILE_TARGET"
 embed_inline_auth_block "$PROFILE_TARGET"
 validate_generated_client_artifacts "$PROFILE_TARGET"
 chmod 600 "$PROFILE_TARGET"

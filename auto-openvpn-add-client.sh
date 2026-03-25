@@ -3,8 +3,9 @@ set -euo pipefail
 
 ORIGINAL_ARGS=("$@")
 
-PROFILE_PROTO="udp"
+PROFILE_PROTO_EXPLICIT="no"
 CN=""
+PROFILE_NAME_BASE=""
 PWD_AUTH_USERNAME=""
 PWD_AUTH_PASSWORD=""
 PWD_AUTH_PASSWORD_CONFIRM=""
@@ -32,11 +33,14 @@ parse_args() {
           exit 1
         }
         PROFILE_PROTO="$2"
+        PROFILE_PROTO_EXPLICIT="yes"
         shift 2
         ;;
       --help|-h)
         cat <<'EOF'
 Usage: auto-openvpn-add-client.sh [--proto udp|tcp] <client-name>
+If client-name contains a '-' or '_' token equal to tcp/udp, that protocol is auto-detected.
+Otherwise the script prompts for udp/tcp and uses a protocol-suffixed profile filename.
 EOF
         exit 0
         ;;
@@ -60,15 +64,17 @@ EOF
     exit 1
   fi
 
-  case "$PROFILE_PROTO" in
-    udp|tcp)
-      ;;
-    *)
-      echo "Invalid protocol: $PROFILE_PROTO" >&2
-      echo "Allowed values: udp, tcp" >&2
-      exit 1
-      ;;
-  esac
+  if [ "$PROFILE_PROTO_EXPLICIT" = "yes" ]; then
+    case "${PROFILE_PROTO:-}" in
+      udp|tcp)
+        ;;
+      *)
+        echo "Invalid protocol: $PROFILE_PROTO" >&2
+        echo "Allowed values: udp, tcp" >&2
+        exit 1
+        ;;
+    esac
+  fi
 }
 
 validate_client_name() {
@@ -78,6 +84,90 @@ validate_client_name() {
     echo "The client name is also used as the default embedded username and password." >&2
     exit 1
   fi
+}
+
+normalize_proto_value() {
+  local proto_value="$1"
+
+  case "${proto_value,,}" in
+    udp|tcp)
+      printf '%s\n' "${proto_value,,}"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+prompt_for_profile_proto() {
+  local proto_choice
+
+  while true; do
+    echo
+    read -r -p "选择协议 Select protocol [udp/tcp] (default: udp): " proto_choice
+    if [ -z "$proto_choice" ]; then
+      PROFILE_PROTO="udp"
+      return 0
+    fi
+
+    proto_choice="$(normalize_proto_value "$proto_choice" || true)"
+    if [ -n "$proto_choice" ]; then
+      PROFILE_PROTO="$proto_choice"
+      return 0
+    fi
+
+    echo "Invalid protocol choice. Allowed values: udp, tcp" >&2
+  done
+}
+
+profile_base_name() {
+  local suffix="-$PROFILE_PROTO"
+
+  case "${CN,,}" in
+    *"$suffix")
+      printf '%s\n' "$CN"
+      ;;
+    *)
+      printf '%s\n' "${CN}${suffix}"
+      ;;
+  esac
+}
+
+announce_detected_proto() {
+  local proto_label
+
+  proto_label="${PROFILE_PROTO^^}"
+  echo "Proto keyword detected: ${proto_label}."
+}
+
+preprocess_profile_proto_from_client_name() {
+  local token
+  local detected_proto=""
+  local explicit_proto=""
+
+  if [ "$PROFILE_PROTO_EXPLICIT" = "yes" ]; then
+    explicit_proto="$(normalize_proto_value "${PROFILE_PROTO:-}" || true)"
+  fi
+
+  IFS='-_' read -r -a tokens <<< "$CN"
+  for token in "${tokens[@]}"; do
+    detected_proto="$(normalize_proto_value "$token" || true)"
+    if [ -n "$detected_proto" ]; then
+      break
+    fi
+  done
+
+  if [ -n "$explicit_proto" ]; then
+    PROFILE_PROTO="$explicit_proto"
+  elif [ -n "$detected_proto" ]; then
+    PROFILE_PROTO="$detected_proto"
+    announce_detected_proto
+  else
+    prompt_for_profile_proto
+  fi
+
+  CN="$(profile_base_name)"
+  PROFILE_NAME_BASE="$CN"
 }
 
 generate_random_password() {
@@ -280,49 +370,30 @@ find_assign_script() {
 
 find_generated_profile() {
   local user_home=""
-  local profile_name
+  local source_name
 
-  profile_name="$(profile_output_name)"
+  source_name="${CN}.ovpn"
 
   if [ -n "${SUDO_USER:-}" ]; then
     user_home="$(getent passwd "$SUDO_USER" 2>/dev/null | cut -d: -f6 || true)"
-    if [ -n "$user_home" ] && [ -f "${user_home}/${profile_name}" ]; then
-      printf '%s\n' "${user_home}/${profile_name}"
-      return 0
-    fi
-    if [ -n "$user_home" ] && [ -f "${user_home}/${CN}.ovpn" ]; then
-      printf '%s\n' "${user_home}/${CN}.ovpn"
+    if [ -n "$user_home" ] && [ -f "${user_home}/${source_name}" ]; then
+      printf '%s\n' "${user_home}/${source_name}"
       return 0
     fi
   fi
 
-  if [ -f "/root/${profile_name}" ]; then
-    printf '%s\n' "/root/${profile_name}"
+  if [ -f "/root/${source_name}" ]; then
+    printf '%s\n' "/root/${source_name}"
     return 0
   fi
 
-  if [ -f "/root/${CN}.ovpn" ]; then
-    printf '%s\n' "/root/${CN}.ovpn"
+  if [ -f "${PWD}/${source_name}" ]; then
+    printf '%s\n' "${PWD}/${source_name}"
     return 0
   fi
 
-  if [ -f "${PWD}/${profile_name}" ]; then
-    printf '%s\n' "${PWD}/${profile_name}"
-    return 0
-  fi
-
-  if [ -f "${PWD}/${CN}.ovpn" ]; then
-    printf '%s\n' "${PWD}/${CN}.ovpn"
-    return 0
-  fi
-
-  if [ -f "${SCRIPT_DIR}/${profile_name}" ]; then
-    printf '%s\n' "${SCRIPT_DIR}/${profile_name}"
-    return 0
-  fi
-
-  if [ -f "${SCRIPT_DIR}/${CN}.ovpn" ]; then
-    printf '%s\n' "${SCRIPT_DIR}/${CN}.ovpn"
+  if [ -f "${SCRIPT_DIR}/${source_name}" ]; then
+    printf '%s\n' "${SCRIPT_DIR}/${source_name}"
     return 0
   fi
 
@@ -333,16 +404,7 @@ should_remove_profile_source() {
   local source_file="$1"
   local target_file="$2"
 
-  [ "$source_file" != "$target_file" ] || return 1
-
-  case "$source_file" in
-    */"${CN}.ovpn")
-      return 0
-      ;;
-    *)
-      return 1
-      ;;
-  esac
+  [ "$source_file" != "$target_file" ]
 }
 
 cleanup_source_profile() {
@@ -450,10 +512,10 @@ extract_server_value() {
 profile_output_name() {
   case "$PROFILE_PROTO" in
     udp)
-      printf '%s.udp.ovpn\n' "$CN"
+      printf '%s.udp.ovpn\n' "$PROFILE_NAME_BASE"
       ;;
     tcp)
-      printf '%s.tcp.ovpn\n' "$CN"
+      printf '%s.tcp.ovpn\n' "$PROFILE_NAME_BASE"
       ;;
   esac
 }
@@ -540,6 +602,7 @@ esac
 require_root "${ORIGINAL_ARGS[@]}"
 parse_args "$@"
 validate_client_name
+preprocess_profile_proto_from_client_name
 prompt_auth_mode
 prompt_pwd_auth_credentials
 

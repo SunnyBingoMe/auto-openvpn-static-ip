@@ -13,14 +13,19 @@ assert_contains() {
   fi
 }
 
-assert_contains "$ROOT_DIR/auto-openvpn-add-client.sh" 'PROFILE_PROTO="udp"'
+assert_contains "$ROOT_DIR/auto-openvpn-add-client.sh" 'PROFILE_PROTO_EXPLICIT="no"'
 assert_contains "$ROOT_DIR/auto-openvpn-add-client.sh" '--proto udp\|tcp'
+assert_contains "$ROOT_DIR/auto-openvpn-add-client.sh" 'prompt_for_profile_proto\('
+assert_contains "$ROOT_DIR/auto-openvpn-add-client.sh" 'preprocess_profile_proto_from_client_name\('
+assert_contains "$ROOT_DIR/auto-openvpn-add-client.sh" 'CN="\$\(profile_base_name\)"'
+assert_contains "$ROOT_DIR/auto-openvpn-add-client.sh" 'PROFILE_NAME_BASE="\$CN"'
+assert_contains "$ROOT_DIR/auto-openvpn-add-client.sh" '\[ "\$source_file" != "\$target_file" \]'
+assert_contains "$ROOT_DIR/auto-openvpn-add-client.sh" 'cleanup_source_profile '
 assert_contains "$ROOT_DIR/auto-openvpn-add-client.sh" 'server-udp\.conf'
 assert_contains "$ROOT_DIR/auto-openvpn-add-client.sh" 'server-tcp\.conf'
 assert_contains "$ROOT_DIR/auto-openvpn-add-client.sh" 'resolve_peer_server_conf\(\)'
-assert_contains "$ROOT_DIR/auto-openvpn-add-client.sh" 'printf '\''%s\.udp\.ovpn\\n'\'' "\$CN"'
-assert_contains "$ROOT_DIR/auto-openvpn-add-client.sh" 'printf '\''%s\.tcp\.ovpn\\n'\'' "\$CN"'
-assert_contains "$ROOT_DIR/auto-openvpn-add-client.sh" 'cleanup_source_profile '
+assert_contains "$ROOT_DIR/auto-openvpn-add-client.sh" "printf '%s\\.udp\\.ovpn\\\\n' \"\\\$PROFILE_NAME_BASE\""
+assert_contains "$ROOT_DIR/auto-openvpn-add-client.sh" "printf '%s\\.tcp\\.ovpn\\\\n' \"\\\$PROFILE_NAME_BASE\""
 assert_contains "$ROOT_DIR/auto-openvpn-add-client.sh" 'validate_profile_embeds\('
 assert_contains "$ROOT_DIR/auto-openvpn-add-client.sh" 'OPENVPN_CCD_DIR="\$TCP_CCD_DIR"'
 assert_contains "$ROOT_DIR/auto-openvpn-add-client.sh" 'OPENVPN_SUBNET_PREFIX="\$TCP_SUBNET_PREFIX"'

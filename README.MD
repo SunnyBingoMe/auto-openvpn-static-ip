@@ -304,16 +304,16 @@ sudo bash restore.sh openvpn-backup-2026-03-25_2318.tgz
 sudo bash tests/restore-smoke-test.sh
 ```
 
-这个脚本会自动检查：
+这个脚本会自动检查，并在发现硬性失败项时返回非零退出码：
 
 - UDP/TCP OpenVPN 服务和 repo 生成的 firewall services 是否处于 active
-- UDP/TCP 监听端口是否真的起来了
+- UDP/TCP 监听端口是否处于 listening 状态
 - `server-udp.conf`、`server-tcp.conf`、`client-common-udp-tcp.txt`、`easy-rsa`、CCD、IPP、证书和 `tc.key` 是否齐全
 - 兼容软链是否仍然指向 repo 约定的位置
 - `net.ipv4.ip_forward` 是否已经打开
-- `pwd-auth` 校验脚本和 `client-pwd-auth` 目录是否存在
+- `pwd-auth` 校验脚本和 `client-pwd-auth` 目录是否存在，并具备 restore.sh 期望的权限/属组
 
-注意：如果 `client-pwd-auth` 目录为空，smoke test 会给出 warning。只有当旧服务器本来就没有这类凭据文件时，这个 warning 才是可接受的；否则说明密码登录相关数据没有完整迁移。
+注意：如果 `client-pwd-auth` 目录为空，smoke test 会给出 warning。只有当旧服务器本来就没有这类凭据文件时，这个 warning 才是可接受的；否则说明密码登录相关数据没有完整迁移。脚本会对目录、校验脚本以及抽样凭据文件做权限/属组检查，但不会实际发起一次密码认证。
 
 如果你已经用别的方式准备好了旧服务器的本地目录快照，还可以再运行一次 best-effort 对比：
 

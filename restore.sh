@@ -76,6 +76,25 @@ ensure_archive_entry() {
   fi
 }
 
+archive_has_entry() {
+  local entry="$1"
+
+  grep -Fqx "$entry" "$ARCHIVE_LIST_FILE"
+}
+
+install_if_present() {
+  local source_path="$1"
+  local mode="$2"
+  local target_path="$3"
+
+  if [ ! -e "$source_path" ]; then
+    return 0
+  fi
+
+  mkdir -p "$(dirname "$target_path")"
+  install -m "$mode" "$source_path" "$target_path"
+}
+
 safe_tar_extract() {
   while IFS= read -r entry; do
     case "$entry" in
@@ -137,6 +156,7 @@ restore_tree() {
   install -m 600 "$STAGING_DIR/${SERVER_DIR#/}/ipp-tcp.txt" "${SERVER_DIR}/ipp-tcp.txt"
 
   install -m 600 "$STAGING_DIR/${SERVER_DIR#/}/ca.crt" "${SERVER_DIR}/ca.crt"
+  install -m 600 "$STAGING_DIR/${SERVER_DIR#/}/ca.key" "${SERVER_DIR}/ca.key"
   install -m 600 "$STAGING_DIR/${SERVER_DIR#/}/server.crt" "${SERVER_DIR}/server.crt"
   install -m 600 "$STAGING_DIR/${SERVER_DIR#/}/server.key" "${SERVER_DIR}/server.key"
   install -m 644 "$STAGING_DIR/${SERVER_DIR#/}/crl.pem" "${SERVER_DIR}/crl.pem"
@@ -147,11 +167,12 @@ restore_tree() {
   install -m 700 "$STAGING_DIR/${SERVER_DIR#/}/auto-openvpn-add-client.sh" "${SERVER_DIR}/auto-openvpn-add-client.sh"
   install -m 700 "$STAGING_DIR/${SERVER_DIR#/}/auto-openvpn-revoke-client.sh" "${SERVER_DIR}/auto-openvpn-revoke-client.sh"
   install -m 700 "$STAGING_DIR/${SERVER_DIR#/}/to-assign-ip-to-client.sh" "${SERVER_DIR}/to-assign-ip-to-client.sh"
+  install_if_present "$STAGING_DIR/${SERVER_DIR#/}/openvpn-pwd-auth-verify.sh" 750 "$PWD_AUTH_VERIFY_SCRIPT"
 
-  install -m 644 "$STAGING_DIR/${UDP_FIREWALL_SERVICE#/}" "$UDP_FIREWALL_SERVICE"
-  install -m 644 "$STAGING_DIR/${TCP_FIREWALL_SERVICE#/}" "$TCP_FIREWALL_SERVICE"
-  install -m 644 "$STAGING_DIR/${EXTRA_FIREWALL_SERVICE#/}" "$EXTRA_FIREWALL_SERVICE"
-  install -m 644 "$STAGING_DIR/${SYSCTL_FORWARD_FILE#/}" "$SYSCTL_FORWARD_FILE"
+  install_if_present "$STAGING_DIR/${UDP_FIREWALL_SERVICE#/}" 644 "$UDP_FIREWALL_SERVICE"
+  install_if_present "$STAGING_DIR/${TCP_FIREWALL_SERVICE#/}" 644 "$TCP_FIREWALL_SERVICE"
+  install_if_present "$STAGING_DIR/${EXTRA_FIREWALL_SERVICE#/}" 644 "$EXTRA_FIREWALL_SERVICE"
+  install_if_present "$STAGING_DIR/${SYSCTL_FORWARD_FILE#/}" 644 "$SYSCTL_FORWARD_FILE"
 }
 
 restore_compat_links() {
@@ -310,10 +331,18 @@ ensure_archive_entry "etc/openvpn/server/server-tcp.conf"
 ensure_archive_entry "etc/openvpn/server/client-common-udp-tcp.txt"
 ensure_archive_entry "etc/openvpn/server/client-pwd-auth/"
 ensure_archive_entry "etc/openvpn/server/ca.crt"
+ensure_archive_entry "etc/openvpn/server/ca.key"
 ensure_archive_entry "etc/openvpn/server/server.crt"
 ensure_archive_entry "etc/openvpn/server/server.key"
-ensure_archive_entry "etc/openvpn/server/tc.key"
 ensure_archive_entry "etc/openvpn/server/crl.pem"
+ensure_archive_entry "etc/openvpn/server/tc.key"
+ensure_archive_entry "etc/openvpn/server/dh.pem"
+ensure_archive_entry "etc/openvpn/server/ipp-udp.txt"
+ensure_archive_entry "etc/openvpn/server/ipp-tcp.txt"
+ensure_archive_entry "etc/openvpn/server/to-get-from-hwdsl2.sh"
+ensure_archive_entry "etc/openvpn/server/auto-openvpn-add-client.sh"
+ensure_archive_entry "etc/openvpn/server/auto-openvpn-revoke-client.sh"
+ensure_archive_entry "etc/openvpn/server/to-assign-ip-to-client.sh"
 ensure_archive_entry "etc/openvpn/ccd-udp/"
 ensure_archive_entry "etc/openvpn/ccd-tcp/"
 

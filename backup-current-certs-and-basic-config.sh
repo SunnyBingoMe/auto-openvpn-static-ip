@@ -22,8 +22,8 @@ require_root "$@"
 OPENVPN_DIR="/etc/openvpn"
 SERVER_DIR="${OPENVPN_DIR}/server"
 PWD_AUTH_DIR="${SERVER_DIR}/client-pwd-auth"
-BACKUP_NAME_DEFAULT="current-certs-and-basic-config-$(date +%F).tgz"
-OUTPUT_PATH="${1:-${SCRIPT_DIR}/${BACKUP_NAME_DEFAULT}}"
+BACKUP_NAME_DEFAULT="openvpn-backup-$(date +%F_%H%M).tgz"
+OUTPUT_PATH="${1:-${HOME}/${BACKUP_NAME_DEFAULT}}"
 
 ensure_exists() {
   local path="$1"
@@ -31,6 +31,30 @@ ensure_exists() {
   if [ ! -e "$path" ]; then
     echo "Required path not found: $path" >&2
     exit 1
+  fi
+}
+
+append_manifest_entry() {
+  local path="$1"
+
+  printf '%s
+' "${path#/}"
+}
+
+append_required_entry() {
+  local path="$1"
+
+  ensure_exists "$path"
+  append_manifest_entry "$path"
+}
+
+append_optional_entry() {
+  local path="$1"
+
+  if [ -e "$path" ] || [ -L "$path" ]; then
+    append_manifest_entry "$path"
+  else
+    echo "WARN: optional path not found, skipping: $path" >&2
   fi
 }
 
@@ -46,9 +70,10 @@ ensure_parent_dir() {
 }
 
 build_manifest() {
-  local paths=(
+  local required_paths=(
     "${SERVER_DIR}/easy-rsa"
     "${SERVER_DIR}/ca.crt"
+    "${SERVER_DIR}/ca.key"
     "${SERVER_DIR}/server.crt"
     "${SERVER_DIR}/server.key"
     "${SERVER_DIR}/crl.pem"
@@ -66,15 +91,22 @@ build_manifest() {
     "${SERVER_DIR}/to-assign-ip-to-client.sh"
     "${OPENVPN_DIR}/ccd-udp"
     "${OPENVPN_DIR}/ccd-tcp"
+  )
+  local optional_paths=(
+    "${SERVER_DIR}/openvpn-pwd-auth-verify.sh"
     "/etc/systemd/system/openvpn-iptables-udp.service"
     "/etc/systemd/system/openvpn-iptables-tcp.service"
     "/etc/systemd/system/openvpn-iptables-udp-tcp-extra.service"
     "/etc/sysctl.d/99-openvpn-forward.conf"
   )
+  local path
 
-  for path in "${paths[@]}"; do
-    ensure_exists "$path"
-    printf '%s\n' "${path#/}"
+  for path in "${required_paths[@]}"; do
+    append_required_entry "$path"
+  done
+
+  for path in "${optional_paths[@]}"; do
+    append_optional_entry "$path"
   done
 }
 

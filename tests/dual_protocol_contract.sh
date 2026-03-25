@@ -44,7 +44,7 @@ assert_contains "$ROOT_DIR/install-auto-openvpn.sh" 'openvpn-server@server-udp\.
 assert_contains "$ROOT_DIR/install-auto-openvpn.sh" 'openvpn-server@server-tcp\.service'
 assert_contains "$ROOT_DIR/install-auto-openvpn.sh" 'openvpn-iptables-udp\.service'
 assert_contains "$ROOT_DIR/install-auto-openvpn.sh" 'openvpn-iptables-tcp\.service'
-assert_contains "$ROOT_DIR/install-auto-openvpn.sh" 'openvpn-iptables-udp-tcp-extra\.service'
+assert_contains "$ROOT_DIR/install-auto-openvpn.sh" 'openvpn-iptables-tcp-udp-exchange-rules\.service'
 assert_contains "$ROOT_DIR/install-auto-openvpn.sh" 'tcp_network'
 assert_contains "$ROOT_DIR/install-auto-openvpn.sh" 'udp_network'
 assert_contains "$ROOT_DIR/install-auto-openvpn.sh" 'server \$\{tcp_subnet_prefix\}\.0\.0 255\.255\.0\.0'

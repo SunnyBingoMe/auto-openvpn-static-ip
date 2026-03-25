@@ -296,7 +296,7 @@ sudo bash restore.sh openvpn-backup-2026-03-25_2318.tgz
 - 先备份新服务器当前 `/etc/openvpn` 相关状态到 `/root/openvpn-restore-backup-时间戳`
 - 覆盖恢复旧服务器的证书、配置、CCD、IPP 和辅助脚本
 - 重建兼容软链并重新启动服务
-- 输出一组仍需你手工确认的公网 IP / 安全组 / UFW 检查项
+- 输出一组仍需你手工确认的事项，包括修改客户端 `.ovpn` 服务器地址，以及外围防火墙是否已放行 OpenVPN 监听端口和 VPN 转发回包路径
 
 ### 4. 运行恢复后的 smoke test
 

@@ -40,7 +40,7 @@ CLIENT_LINK="/usr/local/sbin/auto-openvpn-add-client.sh"
 REVOKE_LINK="/usr/local/sbin/auto-openvpn-revoke-client.sh"
 UDP_FIREWALL_SERVICE="/etc/systemd/system/openvpn-iptables-udp.service"
 TCP_FIREWALL_SERVICE="/etc/systemd/system/openvpn-iptables-tcp.service"
-EXTRA_FIREWALL_SERVICE="/etc/systemd/system/openvpn-iptables-udp-tcp-extra.service"
+TCP_UDP_EXCHANGE_FIREWALL_SERVICE="/etc/systemd/system/openvpn-iptables-tcp-udp-exchange-rules.service"
 LEGACY_FIREWALL_SERVICE="/etc/systemd/system/openvpn-iptables.service"
 UPSTREAM_LIMITNPROC_DROPIN="/etc/systemd/system/openvpn-server@server.service.d/disable-limitnproc.conf"
 UPSTREAM_SYSCTL_FORWARD="/etc/sysctl.d/99-openvpn-forward.conf"
@@ -198,7 +198,7 @@ stop_service_if_present openvpn-server@server-udp.service
 stop_service_if_present openvpn-server@server-tcp.service
 stop_service_if_present openvpn-iptables-udp.service
 stop_service_if_present openvpn-iptables-tcp.service
-stop_service_if_present openvpn-iptables-udp-tcp-extra.service
+stop_service_if_present openvpn-iptables-tcp-udp-exchange-rules.service
 
 remove_if_exists "$CLIENT_LINK"
 remove_if_exists "$REVOKE_LINK"
@@ -208,7 +208,7 @@ remove_if_exists "$REVOKE_TARGET"
 remove_if_exists "$INSTALL_TARGET"
 remove_if_exists "$UDP_FIREWALL_SERVICE"
 remove_if_exists "$TCP_FIREWALL_SERVICE"
-remove_if_exists "$EXTRA_FIREWALL_SERVICE"
+remove_if_exists "$TCP_UDP_EXCHANGE_FIREWALL_SERVICE"
 remove_if_exists "$LEGACY_FIREWALL_SERVICE"
 
 if [ "$keep_client_config" = false ]; then

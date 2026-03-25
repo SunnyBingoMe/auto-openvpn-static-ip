@@ -23,7 +23,25 @@ OPENVPN_DIR="/etc/openvpn"
 SERVER_DIR="${OPENVPN_DIR}/server"
 PWD_AUTH_DIR="${SERVER_DIR}/client-pwd-auth"
 BACKUP_NAME_DEFAULT="openvpn-backup-$(date +%F_%H%M).tgz"
-OUTPUT_PATH="${1:-${HOME}/${BACKUP_NAME_DEFAULT}}"
+
+resolve_default_output_dir() {
+  local sudo_home=""
+
+  if [ -n "${SUDO_USER:-}" ]; then
+    sudo_home="$(getent passwd "$SUDO_USER" 2>/dev/null | cut -d: -f6 || true)"
+    if [ -n "$sudo_home" ] && [ -d "$sudo_home" ] && [ "$sudo_home" != "/" ]; then
+      printf '%s
+' "$sudo_home"
+      return 0
+    fi
+  fi
+
+  printf '%s
+' "$HOME"
+}
+
+DEFAULT_OUTPUT_DIR="$(resolve_default_output_dir)"
+OUTPUT_PATH="${1:-${DEFAULT_OUTPUT_DIR}/${BACKUP_NAME_DEFAULT}}"
 
 ensure_exists() {
   local path="$1"
@@ -96,7 +114,7 @@ build_manifest() {
     "${SERVER_DIR}/openvpn-pwd-auth-verify.sh"
     "/etc/systemd/system/openvpn-iptables-udp.service"
     "/etc/systemd/system/openvpn-iptables-tcp.service"
-    "/etc/systemd/system/openvpn-iptables-udp-tcp-extra.service"
+    "/etc/systemd/system/openvpn-iptables-tcp-udp-exchange-rules.service"
     "/etc/sysctl.d/99-openvpn-forward.conf"
   )
   local path

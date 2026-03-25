@@ -31,7 +31,7 @@ PWD_AUTH_VERIFY_SCRIPT="${SERVER_DIR}/openvpn-pwd-auth-verify.sh"
 EASYRSA_DIR="${SERVER_DIR}/easy-rsa"
 UDP_FIREWALL_SERVICE="/etc/systemd/system/openvpn-iptables-udp.service"
 TCP_FIREWALL_SERVICE="/etc/systemd/system/openvpn-iptables-tcp.service"
-EXTRA_FIREWALL_SERVICE="/etc/systemd/system/openvpn-iptables-udp-tcp-extra.service"
+TCP_UDP_EXCHANGE_FIREWALL_SERVICE="/etc/systemd/system/openvpn-iptables-tcp-udp-exchange-rules.service"
 LEGACY_FIREWALL_SERVICE="/etc/systemd/system/openvpn-iptables.service"
 SYSCTL_FORWARD_FILE="/etc/sysctl.d/99-openvpn-forward.conf"
 CLIENT_LINK="/usr/local/sbin/auto-openvpn-add-client.sh"
@@ -95,6 +95,25 @@ install_if_present() {
   install -m "$mode" "$source_path" "$target_path"
 }
 
+remove_rc_local_openvpn_iptables_restart() {
+  local rc_local_file="/etc/rc.local"
+  local tmp_file
+
+  if [ ! -f "$rc_local_file" ]; then
+    return 0
+  fi
+
+  tmp_file="$(mktemp)"
+  grep -v 'openvpn-iptables.service' "$rc_local_file" > "$tmp_file" || true
+  cat "$tmp_file" > "$rc_local_file"
+  rm -f "$tmp_file"
+}
+
+cleanup_legacy_firewall_state() {
+  rm -f "$LEGACY_FIREWALL_SERVICE"
+  remove_rc_local_openvpn_iptables_restart
+}
+
 safe_tar_extract() {
   while IFS= read -r entry; do
     case "$entry" in
@@ -120,14 +139,15 @@ stop_services() {
   systemctl stop openvpn-server@server-tcp.service >/dev/null 2>&1 || true
   systemctl stop openvpn-iptables-udp.service >/dev/null 2>&1 || true
   systemctl stop openvpn-iptables-tcp.service >/dev/null 2>&1 || true
-  systemctl stop openvpn-iptables-udp-tcp-extra.service >/dev/null 2>&1 || true
+  systemctl stop openvpn-iptables-tcp-udp-exchange-rules.service >/dev/null 2>&1 || true
+  systemctl disable --now openvpn-iptables.service >/dev/null 2>&1 || true
 }
 
 backup_current_state() {
   ROLLBACK_DIR="/root/openvpn-restore-backup-$(date +%Y%m%d%H%M%S)"
   mkdir -p "$ROLLBACK_DIR"
 
-  for path in "$SERVER_DIR" "$UDP_CCD_DIR" "$TCP_CCD_DIR" "$CLIENT_DIR" "$PWD_AUTH_DIR" "$UDP_FIREWALL_SERVICE" "$TCP_FIREWALL_SERVICE" "$EXTRA_FIREWALL_SERVICE" "$SYSCTL_FORWARD_FILE"; do
+  for path in "$SERVER_DIR" "$UDP_CCD_DIR" "$TCP_CCD_DIR" "$CLIENT_DIR" "$PWD_AUTH_DIR" "$UDP_FIREWALL_SERVICE" "$TCP_FIREWALL_SERVICE" "$TCP_UDP_EXCHANGE_FIREWALL_SERVICE" "$SYSCTL_FORWARD_FILE"; do
     if [ -e "$path" ] || [ -L "$path" ]; then
       cp -a --parents "$path" "$ROLLBACK_DIR"
     fi
@@ -171,7 +191,7 @@ restore_tree() {
 
   install_if_present "$STAGING_DIR/${UDP_FIREWALL_SERVICE#/}" 644 "$UDP_FIREWALL_SERVICE"
   install_if_present "$STAGING_DIR/${TCP_FIREWALL_SERVICE#/}" 644 "$TCP_FIREWALL_SERVICE"
-  install_if_present "$STAGING_DIR/${EXTRA_FIREWALL_SERVICE#/}" 644 "$EXTRA_FIREWALL_SERVICE"
+  install_if_present "$STAGING_DIR/${TCP_UDP_EXCHANGE_FIREWALL_SERVICE#/}" 644 "$TCP_UDP_EXCHANGE_FIREWALL_SERVICE"
   install_if_present "$STAGING_DIR/${SYSCTL_FORWARD_FILE#/}" 644 "$SYSCTL_FORWARD_FILE"
 }
 
@@ -266,16 +286,30 @@ ensure_pwd_auth_access() {
     -exec chmod 640 {} +
 }
 
+converge_firewall_units() {
+  if [ -x "$SERVER_DIR/install-auto-openvpn.sh" ]; then
+    OPENVPN_INSTALL_SCRIPT="$SERVER_DIR/to-get-from-hwdsl2.sh"       OPENVPN_ASSIGN_SCRIPT="$SERVER_DIR/to-assign-ip-to-client.sh"       bash "$SERVER_DIR/install-auto-openvpn.sh"
+    return 0
+  fi
+
+  return 1
+}
+
 restart_services() {
   if ! command -v systemctl >/dev/null 2>&1; then
     return 0
   fi
 
   sysctl -e -q -p "$SYSCTL_FORWARD_FILE" >/dev/null 2>&1 || true
+
+  if [ ! -f "$UDP_FIREWALL_SERVICE" ] || [ ! -f "$TCP_FIREWALL_SERVICE" ] || [ ! -f "$TCP_UDP_EXCHANGE_FIREWALL_SERVICE" ]; then
+    converge_firewall_units || true
+  fi
+
   systemctl daemon-reload
   systemctl enable --now openvpn-iptables-udp.service >/dev/null 2>&1 || true
   systemctl enable --now openvpn-iptables-tcp.service >/dev/null 2>&1 || true
-  systemctl enable --now openvpn-iptables-udp-tcp-extra.service >/dev/null 2>&1 || true
+  systemctl enable --now openvpn-iptables-tcp-udp-exchange-rules.service >/dev/null 2>&1 || true
   systemctl enable --now openvpn-server@server-udp.service >/dev/null 2>&1
   systemctl enable --now openvpn-server@server-tcp.service >/dev/null 2>&1
 }
@@ -295,10 +329,10 @@ print_manual_checklist() {
   echo "  sudo bash tests/restore-smoke-test.sh"
   echo "  sudo systemctl status openvpn-server@server-udp.service openvpn-server@server-tcp.service --no-pager"
   echo "第 2 步：再做人工确认"
-  echo "- 确认公网 IP 或 DNS 已经切到当前服务器；如果客户端配置里写的是 IP，通常只需要修改 .ovpn 里的 remote IP。"
-  echo "- 确认云安全组、上游防火墙、UFW、nftables 没有拦截 UDP ${udp_port} 和 TCP ${tcp_port}。"
+  echo "- 修改客户端 .ovpn 里的服务器地址；如果写的是 IP，就更新 remote IP；如果写的是域名，就确认 DNS 已切到当前服务器。"
+  echo "- 确认外围防火墙方向和端口已放行：入站至少允许 UDP ${udp_port} 和 TCP ${tcp_port}，同时不要拦截 OpenVPN 转发后的相关出站/回包流量。"
   echo "- 确认 /etc/openvpn/server/client-pwd-auth 与旧服务器一致，尤其是所有使用密码登录的客户端。"
-  echo "- 用一个真实 UDP 客户端和一个真实 TCP 客户端各连一次，验证只改 remote IP 后即可正常连接。"
+  echo "- 用一个真实 UDP 客户端和一个真实 TCP 客户端各连一次，验证修改服务器地址后即可正常连接。"
   echo "- 如果你已经有旧服务器的本地快照，可选执行：sudo bash compare-restore-state.sh <old-server-root> /"
 }
 
@@ -349,6 +383,7 @@ ensure_archive_entry "etc/openvpn/ccd-tcp/"
 safe_tar_extract
 stop_services
 backup_current_state
+cleanup_legacy_firewall_state
 restore_tree
 restore_compat_links
 deploy_pwd_auth_verify_script

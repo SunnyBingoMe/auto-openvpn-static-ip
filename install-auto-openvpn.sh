@@ -30,7 +30,7 @@ TCP_SERVER_CONF="${SERVER_DIR}/server-tcp.conf"
 EASYRSA_DIR="${SERVER_DIR}/easy-rsa"
 UDP_FIREWALL_SERVICE="/etc/systemd/system/openvpn-iptables-udp.service"
 TCP_FIREWALL_SERVICE="/etc/systemd/system/openvpn-iptables-tcp.service"
-EXTRA_FIREWALL_SERVICE="/etc/systemd/system/openvpn-iptables-udp-tcp-extra.service"
+TCP_UDP_EXCHANGE_FIREWALL_SERVICE="/etc/systemd/system/openvpn-iptables-tcp-udp-exchange-rules.service"
 UDP_IPP_FILE="${SERVER_DIR}/ipp-udp.txt"
 TCP_IPP_FILE="${SERVER_DIR}/ipp-tcp.txt"
 CLIENT_COMMON_FILE="${SERVER_DIR}/client-common-udp-tcp.txt"
@@ -434,13 +434,16 @@ ensure_cross_subnet_routes() {
   ensure_conf_has_line "$TCP_SERVER_CONF" "push \"route ${udp_network} ${udp_mask}\""
 }
 
-ensure_tcp_firewall() {
+ensure_firewall_services() {
+  local udp_port
   local tcp_port
   local iptables_path
   local udp_network
   local tcp_network
 
+  udp_port="$(extract_server_value "$SERVER_CONF" port)"
   tcp_port="$(extract_server_value "$TCP_SERVER_CONF" port)"
+  [ -n "$udp_port" ] || udp_port=1194
   [ -n "$tcp_port" ] || tcp_port=1194
   udp_network="$(extract_server_network "$SERVER_CONF")"
   tcp_network="$(extract_server_network "$TCP_SERVER_CONF")"
@@ -464,23 +467,39 @@ ensure_tcp_firewall() {
   fi
 
   iptables_path="$(command -v iptables)"
+  cat > "$UDP_FIREWALL_SERVICE" <<EOF
+[Unit]
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -lc '${iptables_path} -w 5 -C INPUT -p udp --dport ${udp_port} -j ACCEPT || ${iptables_path} -w 5 -I INPUT -p udp --dport ${udp_port} -j ACCEPT'
+ExecStart=/bin/bash -lc '${iptables_path} -w 5 -C FORWARD -s ${udp_network}/16 -j ACCEPT || ${iptables_path} -w 5 -I FORWARD -s ${udp_network}/16 -j ACCEPT'
+ExecStart=/bin/bash -lc '${iptables_path} -w 5 -C FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT || ${iptables_path} -w 5 -I FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT'
+ExecStart=/bin/bash -lc '${iptables_path} -w 5 -t nat -C POSTROUTING -s ${udp_network}/16 ! -d ${udp_network}/16 -j MASQUERADE || ${iptables_path} -w 5 -t nat -A POSTROUTING -s ${udp_network}/16 ! -d ${udp_network}/16 -j MASQUERADE'
+ExecStop=${iptables_path} -w 5 -D INPUT -p udp --dport ${udp_port} -j ACCEPT
+ExecStop=${iptables_path} -w 5 -D FORWARD -s ${udp_network}/16 -j ACCEPT
+ExecStop=${iptables_path} -w 5 -D FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
+ExecStop=${iptables_path} -w 5 -t nat -D POSTROUTING -s ${udp_network}/16 ! -d ${udp_network}/16 -j MASQUERADE
+RemainAfterExit=yes
+[Install]
+WantedBy=multi-user.target
+EOF
+
   cat > "$TCP_FIREWALL_SERVICE" <<EOF
 [Unit]
 After=network-online.target
 Wants=network-online.target
 [Service]
 Type=oneshot
-ExecStart=${iptables_path} -w 5 -I INPUT -p tcp --dport ${tcp_port} -j ACCEPT
+ExecStart=/bin/bash -lc '${iptables_path} -w 5 -C INPUT -p tcp --dport ${tcp_port} -j ACCEPT || ${iptables_path} -w 5 -I INPUT -p tcp --dport ${tcp_port} -j ACCEPT'
 ExecStop=${iptables_path} -w 5 -D INPUT -p tcp --dport ${tcp_port} -j ACCEPT
 RemainAfterExit=yes
 [Install]
 WantedBy=multi-user.target
 EOF
 
-  run_root_cmd systemctl daemon-reload
-  run_root_cmd systemctl enable --now openvpn-iptables-tcp.service
-
-  cat > "$EXTRA_FIREWALL_SERVICE" <<EOF
+  cat > "$TCP_UDP_EXCHANGE_FIREWALL_SERVICE" <<EOF
 [Unit]
 After=network-online.target openvpn-iptables-udp.service openvpn-iptables-tcp.service
 Wants=network-online.target
@@ -500,7 +519,9 @@ WantedBy=multi-user.target
 EOF
 
   run_root_cmd systemctl daemon-reload
-  run_root_cmd systemctl enable --now openvpn-iptables-udp-tcp-extra.service
+  run_root_cmd systemctl enable --now openvpn-iptables-udp.service
+  run_root_cmd systemctl enable --now openvpn-iptables-tcp.service
+  run_root_cmd systemctl enable --now openvpn-iptables-tcp-udp-exchange-rules.service
 }
 
 ensure_tcp_selinux_port() {
@@ -628,7 +649,7 @@ ensure_server_conf_has_ccd
 ensure_udp_server_conf
 ensure_tcp_server_conf
 ensure_cross_subnet_routes
-ensure_tcp_firewall
+ensure_firewall_services
 ensure_tcp_selinux_port
 ensure_initial_client_ccd
 migrate_openvpn_instances

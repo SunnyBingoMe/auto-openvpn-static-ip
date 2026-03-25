@@ -32,7 +32,7 @@ EOF
         ;;
       *)
         if [ -n "$CN" ]; then
-          echo "unexpected extra argument: $1" >&2
+      echo "unexpected positional argument: $1" >&2
           exit 1
         fi
         CN="$1"

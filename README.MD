@@ -50,6 +50,7 @@ sudo sh ./install-auto-openvpn.sh
 
 ```bash
 bash install-auto-openvpn.sh
+#PS：测试通过的 Ubuntu 24.04.2 机器上 `apt` 安装到的 OpenVPN 版本是 `2.6.19`。
 ```
 
 安装脚本会：

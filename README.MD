@@ -19,10 +19,10 @@ sudo sh ./install-auto-openvpn.sh
 - 安装完成后，OpenVPN 服务端配置和辅助脚本会放到 `/etc/openvpn` 体系下。
 - 运行 `sudo auto-openvpn-add-client.sh my_client_name` 时，会自动：
   - 创建客户端证书和 `.ovpn` 配置文件
-  - 询问客户端登录用户名（默认同客户端名）以及是否手动输入密码
+  - 询问客户端登录用户名（默认同客户端名）以及登录密码
   - 为该客户端生成 CCD 文件
   - 自动分配一个静态 VPN IP
-- 客户端名允许字符为字母、数字、`-`、`_`；因为它同时会作为默认内嵌用户名和默认内嵌密码
+- 客户端名允许字符为字母、数字、`-`、`_`；因为它既可能作为默认登录用户名和默认登录密码，也可能在选择 `n` 时作为内嵌到 `.ovpn` 的默认凭据
 - 安装完成后，服务端会同时启用 UDP 和 TCP 两个 OpenVPN 监听；UDP 保持默认客户端导出协议，TCP 用于需要时显式导出。
 - 为避免双实例共享同一地址池带来的冲突，UDP 默认使用 `172.22.0.0/16`，TCP 默认使用独立的 `172.23.0.0/16`。
 - 安装脚本会自动下发对端子网路由，所以 `172.22.0.0/16` 与 `172.23.0.0/16` 默认互通。
@@ -82,10 +82,11 @@ sudo auto-openvpn-add-client.sh --proto tcp my_client_name
 
 - 当客户端证书不存在时，调用 `/etc/openvpn/server/to-get-from-hwdsl2.sh --addclient my_client_name`
 - 当客户端证书已存在时，调用 `/etc/openvpn/server/to-get-from-hwdsl2.sh --exportclient my_client_name`
-- 询问该客户端的 OpenVPN 登录用户名，默认值为 `my_client_name`
-- 询问该客户端的 OpenVPN 登录密码；密码会直接内嵌到导出的 `.ovpn` 中
-- 如果选择不手动设密码，脚本不会继续询问用户名和密码，而是直接使用客户端名作为默认用户名和默认密码，并内嵌到 `.ovpn` 中
-- 如果选择手动设密码，但两次密码都输入为空，脚本会使用客户端名作为默认用户名和默认密码，并内嵌到 `.ovpn` 中
+- 如果保持默认选项（要求客户端密码登录），则询问该客户端的 OpenVPN 登录用户名，默认值为 `my_client_name`
+- 如果保持默认选项（要求客户端密码登录），则询问该客户端的 OpenVPN 登录密码；这些凭据会保存到服务端校验目录，客户端连接时需要手动输入，不会内嵌到导出的 `.ovpn` 中
+- 如果保持默认选项（要求客户端密码登录）且用户名直接回车，则默认用户名为客户端名
+- 如果保持默认选项（要求客户端密码登录）且两次密码都留空，则默认密码为客户端名
+- 如果选择 `n`，则不会继续询问用户名和密码，而是直接使用客户端名作为默认用户名和默认密码，并将它们内嵌到 `.ovpn` 中，用来模拟 cert-only 的使用方式
 - 调用 `/etc/openvpn/server/to-assign-ip-to-client.sh my_client_name`
 - 在 `/etc/openvpn/ccd-udp/my_client_name` 写入类似下面的内容：
 
@@ -109,10 +110,6 @@ ifconfig-push 172.22.X.Y 255.255.0.0
 
 ```conf
 auth-user-pass
-<auth-user-pass>
-my_client_name
-my_password
-</auth-user-pass>
 ignore-unknown-option block-outside-dns block-ipv6
 pull-filter ignore redirect-gateway
 pull-filter ignore "dhcp-option DNS"
@@ -123,8 +120,7 @@ route 172.22.0.0 255.255.0.0
 这意味着：
 
 - 客户端仍会连上 VPN
-- 客户端除了 `.ovpn` 内嵌证书外，还会直接使用 `.ovpn` 中内嵌的用户名和密码；如果没有手动设密码，脚本会自动生成一组可用凭据
-- 客户端除了 `.ovpn` 内嵌证书外，还会直接使用 `.ovpn` 中内嵌的用户名和密码；如果没有手动设密码，则默认用户名和密码都等于客户端名
+- 客户端除了 `.ovpn` 内嵌证书外，如果服务端要求用户名密码登录，则会在连接时手动输入用户名和密码；只有选择 `n` 模拟 cert-only 时，`.ovpn` 才会额外内嵌默认用户名和密码
 - 客户端可访问整个 `172.22.0.0/16` VPN 网段
 - 客户端不会默认把所有流量走 VPN
 - 客户端默认继续使用自己本机的 DNS
@@ -254,10 +250,10 @@ sudo bash compare-restore-state.sh <old-server-root> /
 sudo bash backup-current-certs-and-basic-config.sh
 ```
 
-默认会生成一个类似下面的文件：
+默认会在当前用户的 home 目录生成一个类似下面的文件：
 
 ```bash
-./current-certs-and-basic-config-2026-03-19.tgz
+~/openvpn-backup-2026-03-25_2318.tgz
 ```
 
 备份成功后，脚本还会额外打印一个 best-effort 摘要，例如 `pwd-auth credential files`、UDP CCD 数量、TCP CCD 数量。这只是辅助核对信息；如果摘要统计失败，不会影响主备份包生成。
@@ -265,7 +261,7 @@ sudo bash backup-current-certs-and-basic-config.sh
 你也可以显式指定输出路径：
 
 ```bash
-sudo bash backup-current-certs-and-basic-config.sh /root/current-certs-and-basic-config-2026-03-19.tgz
+sudo bash backup-current-certs-and-basic-config.sh ~/openvpn-backup-2026-03-25_2318.tgz
 ```
 
 备份包会保留：
@@ -290,7 +286,7 @@ sudo bash install-auto-openvpn.sh
 ### 3. 在新服务器恢复
 
 ```bash
-sudo bash restore.sh current-certs-and-basic-config-2026-03-19.tgz
+sudo bash restore.sh openvpn-backup-2026-03-25_2318.tgz
 ```
 
 恢复脚本会：

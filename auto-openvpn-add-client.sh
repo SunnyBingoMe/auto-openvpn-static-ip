@@ -185,11 +185,11 @@ prompt_auth_mode() {
   case "$auth_choice" in
     [Nn]|[Nn][Oo])
       USE_MANUAL_PWD_AUTH="no"
-      echo "未启用手动密码输入，将使用客户端名作为默认用户名和密码并内嵌到 .ovpn。"
+      echo "将为该客户端内嵌用户名和密码，模拟 cert-only 使用方式。"
       ;;
     *)
       USE_MANUAL_PWD_AUTH="yes"
-      echo "将为该客户端生成带内嵌用户名密码的 .ovpn。"
+      echo "该客户端将启用用户名密码登录；连接时需要手动输入用户名和密码。"
       ;;
   esac
 }
@@ -218,7 +218,7 @@ prompt_pwd_auth_credentials() {
 
   if [ -z "$PWD_AUTH_PASSWORD" ] && [ -z "$PWD_AUTH_PASSWORD_CONFIRM" ]; then
     PWD_AUTH_PASSWORD="$CN"
-    echo "已使用客户端名作为默认内嵌密码。 Using client name as embedded password."
+    echo "已使用客户端名作为默认登录密码。 Using client name as login password."
     return 0
   fi
 
@@ -229,9 +229,8 @@ prompt_pwd_auth_credentials() {
   fi
 
   if [ "$PWD_AUTH_PASSWORD" != "$PWD_AUTH_PASSWORD_CONFIRM" ]; then
-    echo "两次不同 Passwords do not match. Falling back to generated embedded password." >&2
-    PWD_AUTH_PASSWORD="$(generate_random_password)"
-    return 0
+    echo "两次输入不同 Passwords do not match." >&2
+    exit 1
   fi
 }
 
@@ -416,8 +415,21 @@ cleanup_source_profile() {
   fi
 }
 
-validate_profile_embeds() {
+validate_profile_auth_mode() {
   local profile_file="$1"
+
+  if ! grep -Fqs 'auth-user-pass' "$profile_file"; then
+    echo "generated profile is missing auth-user-pass directive: $profile_file" >&2
+    exit 1
+  fi
+
+  if [ "$USE_MANUAL_PWD_AUTH" = "yes" ]; then
+    if grep -Fqs '<auth-user-pass>' "$profile_file"; then
+      echo "generated profile unexpectedly embeds credentials: $profile_file" >&2
+      exit 1
+    fi
+    return 0
+  fi
 
   if ! grep -Fqs '<auth-user-pass>' "$profile_file"; then
     echo "generated profile is missing embedded credentials: $profile_file" >&2
@@ -450,7 +462,7 @@ validate_generated_client_artifacts() {
     exit 1
   fi
 
-  validate_profile_embeds "$profile_file"
+  validate_profile_auth_mode "$profile_file"
 }
 client_pki_complete() {
   [ -f "${SERVER_DIR}/easy-rsa/pki/issued/${CN}.crt" ] \
@@ -691,8 +703,10 @@ PROFILE_OUTPUT="$(profile_output_name)"
 PROFILE_TARGET="${CLIENT_DIR}/${PROFILE_OUTPUT}"
 
 rewrite_profile_for_protocol "$PROFILE_SOURCE" "$PROFILE_TARGET" "$SERVER_CONF" "$PEER_SERVER_CONF"
+if [ "$USE_MANUAL_PWD_AUTH" != "yes" ]; then
+  embed_inline_auth_block "$PROFILE_TARGET"
+fi
 cleanup_source_profile "$PROFILE_SOURCE" "$PROFILE_TARGET"
-embed_inline_auth_block "$PROFILE_TARGET"
 validate_generated_client_artifacts "$PROFILE_TARGET"
 chmod 600 "$PROFILE_TARGET"
 

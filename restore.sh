@@ -21,6 +21,7 @@ require_root "$@"
 OPENVPN_DIR="/etc/openvpn"
 SERVER_DIR="${OPENVPN_DIR}/server"
 UDP_CCD_DIR="${OPENVPN_DIR}/ccd-udp"
+LEGACY_CCD_DIR="${OPENVPN_DIR}/ccd"
 TCP_CCD_DIR="${OPENVPN_DIR}/ccd-tcp"
 CLIENT_DIR="${OPENVPN_DIR}/client-udp-tcp"
 SERVER_CONF="${SERVER_DIR}/server-udp.conf"
@@ -36,6 +37,123 @@ LEGACY_FIREWALL_SERVICE="/etc/systemd/system/openvpn-iptables.service"
 SYSCTL_FORWARD_FILE="/etc/sysctl.d/99-openvpn-forward.conf"
 CLIENT_LINK="/usr/local/sbin/auto-openvpn-add-client.sh"
 REVOKE_LINK="/usr/local/sbin/auto-openvpn-revoke-client.sh"
+PUBLIC_IP_WARNINGS=()
+
+ensure_conf_has_line() {
+  local conf_file="$1"
+  local line="$2"
+
+  if ! grep -Fqs "$line" "$conf_file"; then
+    printf '\n%s\n' "$line" >> "$conf_file"
+  fi
+}
+
+extract_server_network() {
+  local conf_file="$1"
+
+  awk '$1 == "server" { print $2; exit }' "$conf_file"
+}
+
+extract_server_mask() {
+  local conf_file="$1"
+
+  awk '$1 == "server" { print $3; exit }' "$conf_file"
+}
+
+extract_server_value() {
+  local conf_file="$1"
+  local key="$2"
+
+  awk -v key="$key" '$1 == key { print $2; exit }' "$conf_file"
+}
+
+host_has_ipv4() {
+  local ip="$1"
+
+  ip -o -4 addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | grep -Fxq "$ip"
+}
+
+is_ipv4() {
+  local candidate="$1"
+
+  grep -Eq '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' <<< "$candidate"
+}
+
+fetch_url_ipv4() {
+  local url="$1"
+  local response=""
+
+  if command -v wget >/dev/null 2>&1; then
+    response="$(wget -T 8 -t 1 -4qO- "$url" 2>/dev/null || true)"
+  elif command -v curl >/dev/null 2>&1; then
+    response="$(curl -m 8 -4fsSL "$url" 2>/dev/null || true)"
+  else
+    return 1
+  fi
+
+  grep -m 1 -oE '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' <<< "$response" || true
+}
+
+fetch_cip_cc_ipv4() {
+  local response=""
+
+  if command -v curl >/dev/null 2>&1; then
+    response="$(curl -4fsS --max-time 8 cip.cc 2>&1 | head -n 1 | sed 's/.*: //' || true)"
+  elif command -v wget >/dev/null 2>&1; then
+    response="$(wget -T 8 -t 1 -4qO- "https://cip.cc" 2>/dev/null | head -n 1 | sed 's/.*: //' || true)"
+  else
+    return 1
+  fi
+
+  grep -m 1 -oE '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' <<< "$response" || true
+}
+
+fetch_dns_ipv4() {
+  local response=""
+
+  if command -v dig >/dev/null 2>&1; then
+    response="$(dig +short myip.opendns.com @resolver1.opendns.com 2>/dev/null | head -n 1 || true)"
+  elif command -v nslookup >/dev/null 2>&1; then
+    response="$(nslookup myip.opendns.com resolver1.opendns.com 2>/dev/null | grep -m 1 -oE '[0-9]{1,3}(\.[0-9]{1,3}){3}' || true)"
+  else
+    return 1
+  fi
+
+  grep -m 1 -oE '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' <<< "$response" || true
+}
+
+append_public_ip_warning() {
+  local message="$1"
+
+  PUBLIC_IP_WARNINGS+=("$message")
+}
+
+detect_public_ipv4() {
+  local detected_ip=""
+
+  detected_ip="$(fetch_cip_cc_ipv4)"
+  if is_ipv4 "$detected_ip"; then
+    printf '%s\n' "$detected_ip"
+    return 0
+  fi
+  append_public_ip_warning "cip.cc 服务出错或未返回有效公网 IPv4"
+
+  detected_ip="$(fetch_url_ipv4 "https://ifconfig.me/ip")"
+  if is_ipv4 "$detected_ip"; then
+    printf '%s\n' "$detected_ip"
+    return 0
+  fi
+  append_public_ip_warning "ifconfig.me 服务出错或未返回有效公网 IPv4"
+
+  detected_ip="$(fetch_dns_ipv4)"
+  if is_ipv4 "$detected_ip"; then
+    printf '%s\n' "$detected_ip"
+    return 0
+  fi
+  append_public_ip_warning "OpenDNS 查询服务出错或未返回有效公网 IPv4"
+
+  return 1
+}
 
 ARCHIVE_PATH="${1:-}"
 
@@ -203,9 +321,10 @@ restore_compat_links() {
   chown nobody:nogroup "${SERVER_DIR}/crl.pem" 2>/dev/null || true
   chmod o+x "$SERVER_DIR"
 
+  rm -rf "$LEGACY_CCD_DIR" "${OPENVPN_DIR}/client"
   ln -sfn "$SERVER_CONF" "${SERVER_DIR}/server.conf"
   ln -sfn "$CLIENT_COMMON_FILE" "${SERVER_DIR}/client-common.txt"
-  ln -sfn "$UDP_CCD_DIR" "${OPENVPN_DIR}/ccd"
+  ln -sfn "$UDP_CCD_DIR" "$LEGACY_CCD_DIR"
   ln -sfn "$CLIENT_DIR" "${OPENVPN_DIR}/client"
   ln -sfn "${SERVER_DIR}/auto-openvpn-add-client.sh" "$CLIENT_LINK"
   ln -sfn "${SERVER_DIR}/auto-openvpn-revoke-client.sh" "$REVOKE_LINK"
@@ -225,11 +344,12 @@ pwd_cred_store="/etc/openvpn/server/client-pwd-auth"
 client_file="$pwd_cred_store/${common_name}.credentials"
 
 [ -f "$pwd_auth_file" ] || exit 1
-[ -f "$client_file" ] || exit 1
+[ -f "$client_file" ] || exit 0
 
 username="$(sed -n '1p' "$pwd_auth_file")"
 password="$(sed -n '2p' "$pwd_auth_file")"
 [ -n "$username" ] || exit 1
+[ -n "$password" ] || exit 1
 
 while IFS=: read -r stored_user stored_password; do
   [ "$stored_user" = "$username" ] || continue
@@ -286,6 +406,112 @@ ensure_pwd_auth_access() {
     -exec chmod 640 {} +
 }
 
+ensure_server_conf_has_pwd_auth() {
+  local conf_file="$1"
+
+  ensure_conf_has_line "$conf_file" "script-security 2"
+  ensure_conf_has_line "$conf_file" "auth-user-pass-verify ${PWD_AUTH_VERIFY_SCRIPT} via-file"
+}
+
+normalize_local_bind() {
+  local conf_file="$1"
+  local bind_ip
+
+  bind_ip="$(extract_server_value "$conf_file" local)"
+  [ -n "$bind_ip" ] || return 0
+
+  if host_has_ipv4 "$bind_ip"; then
+    return 0
+  fi
+
+  sed -i '/^local /d' "$conf_file"
+}
+
+ensure_udp_server_conf() {
+  if [ ! -f "$SERVER_CONF" ]; then
+    echo "OpenVPN server config not found: $SERVER_CONF" >&2
+    exit 1
+  fi
+
+  sed -i "s#^client-config-dir .*#client-config-dir ${UDP_CCD_DIR}#" "$SERVER_CONF"
+  sed -i "s#^ifconfig-pool-persist .*#ifconfig-pool-persist ${SERVER_DIR}/ipp-udp.txt#" "$SERVER_CONF"
+  normalize_local_bind "$SERVER_CONF"
+  ensure_conf_has_line "$SERVER_CONF" "client-config-dir ${UDP_CCD_DIR}"
+  ensure_server_conf_has_pwd_auth "$SERVER_CONF"
+}
+
+ensure_tcp_server_conf() {
+  local udp_port
+  local tcp_port
+
+  if [ ! -f "$TCP_SERVER_CONF" ]; then
+    echo "OpenVPN TCP server config not found: $TCP_SERVER_CONF" >&2
+    exit 1
+  fi
+
+  udp_port="$(extract_server_value "$SERVER_CONF" port)"
+  [ -n "$udp_port" ] || udp_port=1194
+  tcp_port="$(extract_server_value "$TCP_SERVER_CONF" port)"
+  [ -n "$tcp_port" ] || tcp_port="$udp_port"
+
+  sed -i 's/^proto .*/proto tcp/' "$TCP_SERVER_CONF"
+  sed -i "s/^port .*/port ${tcp_port}/" "$TCP_SERVER_CONF"
+  sed -i "s#^client-config-dir .*#client-config-dir ${TCP_CCD_DIR}#" "$TCP_SERVER_CONF"
+  sed -i "s#^ifconfig-pool-persist .*#ifconfig-pool-persist ${SERVER_DIR}/ipp-tcp.txt#" "$TCP_SERVER_CONF"
+  sed -i '/^explicit-exit-notify$/d' "$TCP_SERVER_CONF"
+  normalize_local_bind "$TCP_SERVER_CONF"
+  ensure_conf_has_line "$TCP_SERVER_CONF" "client-config-dir ${TCP_CCD_DIR}"
+  ensure_server_conf_has_pwd_auth "$TCP_SERVER_CONF"
+}
+
+ensure_cross_subnet_routes() {
+  local udp_network
+  local udp_mask
+  local tcp_network
+  local tcp_mask
+
+  udp_network="$(extract_server_network "$SERVER_CONF")"
+  udp_mask="$(extract_server_mask "$SERVER_CONF")"
+  tcp_network="$(extract_server_network "$TCP_SERVER_CONF")"
+  tcp_mask="$(extract_server_mask "$TCP_SERVER_CONF")"
+
+  [ -n "$udp_network" ] && [ -n "$udp_mask" ] && [ -n "$tcp_network" ] && [ -n "$tcp_mask" ] || return 0
+
+  ensure_conf_has_line "$SERVER_CONF" "push \"route ${tcp_network} ${tcp_mask}\""
+  ensure_conf_has_line "$TCP_SERVER_CONF" "push \"route ${udp_network} ${udp_mask}\""
+}
+
+sync_openvpn_dropins() {
+  local source_dir="/etc/systemd/system/openvpn-server@server.service.d"
+  local target_dir="$1"
+
+  mkdir -p "$target_dir"
+
+  if [ -d "$source_dir" ]; then
+    cp -a "$source_dir"/. "$target_dir"/
+  fi
+}
+
+migrate_openvpn_instances() {
+  local legacy_service="openvpn-server@server.service"
+  local legacy_dropin_dir="/etc/systemd/system/openvpn-server@server.service.d"
+  local udp_dropin_dir="/etc/systemd/system/openvpn-server@server-udp.service.d"
+  local tcp_dropin_dir="/etc/systemd/system/openvpn-server@server-tcp.service.d"
+
+  if ! command -v systemctl >/dev/null 2>&1; then
+    return 0
+  fi
+
+  sync_openvpn_dropins "$udp_dropin_dir"
+  sync_openvpn_dropins "$tcp_dropin_dir"
+
+  if [ -d "$legacy_dropin_dir" ]; then
+    rm -rf "$legacy_dropin_dir"
+  fi
+
+  systemctl disable --now "$legacy_service" >/dev/null 2>&1 || true
+}
+
 converge_firewall_units() {
   if [ -x "$SERVER_DIR/install-auto-openvpn.sh" ]; then
     OPENVPN_INSTALL_SCRIPT="$SERVER_DIR/to-get-from-hwdsl2.sh"       OPENVPN_ASSIGN_SCRIPT="$SERVER_DIR/to-assign-ip-to-client.sh"       bash "$SERVER_DIR/install-auto-openvpn.sh"
@@ -317,6 +543,7 @@ restart_services() {
 print_manual_checklist() {
   local udp_port
   local tcp_port
+  local public_ip=""
 
   udp_port="$(awk '$1 == "port" { print $2; exit }' "$SERVER_CONF")"
   tcp_port="$(awk '$1 == "port" { print $2; exit }' "$TCP_SERVER_CONF")"
@@ -329,7 +556,21 @@ print_manual_checklist() {
   echo "  sudo bash tests/restore-smoke-test.sh"
   echo "  sudo systemctl status openvpn-server@server-udp.service openvpn-server@server-tcp.service --no-pager"
   echo "第 2 步：再做人工确认"
-  echo "- 修改客户端 .ovpn 里的服务器地址；如果写的是 IP，就更新 remote IP；如果写的是域名，就确认 DNS 已切到当前服务器。"
+  public_ip="$(detect_public_ipv4 || true)"
+  if [ -n "$public_ip" ]; then
+    echo "- 修改客户端 .ovpn 里的服务器地址；如果写的是 IP，就把 remote IP 更新为 ${public_ip}；如果写的是域名，就确认 DNS 已切到当前服务器。"
+  else
+    echo "- 修改客户端 .ovpn 里的服务器地址；如果写的是 IP，就更新 remote IP；如果写的是域名，就确认 DNS 已切到当前服务器。"
+    if [ "${#PUBLIC_IP_WARNINGS[@]}" -gt 0 ]; then
+      printf '  公网 IP 自动探测失败：%s\n' "${PUBLIC_IP_WARNINGS[0]}"
+      if [ "${#PUBLIC_IP_WARNINGS[@]}" -gt 1 ]; then
+        printf '  备用方法也失败：%s\n' "${PUBLIC_IP_WARNINGS[1]}"
+      fi
+      if [ "${#PUBLIC_IP_WARNINGS[@]}" -gt 2 ]; then
+        printf '  DNS 回退方法也失败：%s\n' "${PUBLIC_IP_WARNINGS[2]}"
+      fi
+    fi
+  fi
   echo "- 确认外围防火墙方向和端口已放行：入站至少允许 UDP ${udp_port} 和 TCP ${tcp_port}，同时不要拦截 OpenVPN 转发后的相关出站/回包流量。"
   echo "- 确认 /etc/openvpn/server/client-pwd-auth 与旧服务器一致，尤其是所有使用密码登录的客户端。"
   echo "- 用一个真实 UDP 客户端和一个真实 TCP 客户端各连一次，验证修改服务器地址后即可正常连接。"
@@ -387,7 +628,11 @@ cleanup_legacy_firewall_state
 restore_tree
 restore_compat_links
 deploy_pwd_auth_verify_script
+ensure_udp_server_conf
+ensure_tcp_server_conf
+ensure_cross_subnet_routes
 ensure_pwd_auth_access
+migrate_openvpn_instances
 restart_services
 
 echo "Restore completed from: $ARCHIVE_PATH"

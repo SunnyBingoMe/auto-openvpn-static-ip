@@ -549,12 +549,26 @@ extract_server_value() {
 }
 
 profile_output_name() {
+  local os_suffix
+
+  case "${CLIENT_OS}" in
+    linux)
+      os_suffix="nix"
+      ;;
+    windows)
+      os_suffix="win"
+      ;;
+    *)
+      os_suffix="===UNKNOWN-OS==="
+      ;;
+  esac
+
   case "$PROFILE_PROTO" in
     udp)
-      printf '%s.udp.ovpn\n' "$PROFILE_NAME_BASE"
+      printf '%s.udp.%s.ovpn\n' "$PROFILE_NAME_BASE" "$os_suffix"
       ;;
     tcp)
-      printf '%s.tcp.ovpn\n' "$PROFILE_NAME_BASE"
+      printf '%s.tcp.%s.ovpn\n' "$PROFILE_NAME_BASE" "$os_suffix"
       ;;
   esac
 }

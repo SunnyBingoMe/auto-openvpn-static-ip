@@ -36,16 +36,19 @@ TCP_IPP_FILE="${SERVER_DIR}/ipp-tcp.txt"
 CLIENT_COMMON_FILE="${SERVER_DIR}/client-common-udp-tcp.txt"
 PWD_AUTH_DIR="${SERVER_DIR}/client-pwd-auth"
 PWD_AUTH_VERIFY_SCRIPT="${SERVER_DIR}/openvpn-pwd-auth-verify.sh"
+CLIENT_OPENVPN_DIR="${OPENVPN_DIR}/client"
 
 ASSIGN_SOURCE="${SCRIPT_DIR}/to-assign-ip-to-client.sh"
 CLIENT_SOURCE="${SCRIPT_DIR}/auto-openvpn-add-client.sh"
 REVOKE_SOURCE="${SCRIPT_DIR}/auto-openvpn-revoke-client.sh"
 INSTALL_SOURCE="${SCRIPT_DIR}/to-get-from-hwdsl2.sh"
+FIX_ROUTE_SOURCE="${SCRIPT_DIR}/fix-route.sh"
 
 ASSIGN_TARGET="${SERVER_DIR}/to-assign-ip-to-client.sh"
 CLIENT_TARGET="${SERVER_DIR}/auto-openvpn-add-client.sh"
 REVOKE_TARGET="${SERVER_DIR}/auto-openvpn-revoke-client.sh"
 INSTALL_TARGET="${SERVER_DIR}/to-get-from-hwdsl2.sh"
+FIX_ROUTE_TARGET="${CLIENT_OPENVPN_DIR}/fix-routes.sh"
 CLIENT_LINK="/usr/local/sbin/auto-openvpn-add-client.sh"
 REVOKE_LINK="/usr/local/sbin/auto-openvpn-revoke-client.sh"
 LEGACY_OPENVPN_SERVICE="openvpn-server@server.service"
@@ -55,6 +58,33 @@ SYSTEMD_DIR="/etc/systemd/system"
 LEGACY_OPENVPN_DROPIN_DIR="${SYSTEMD_DIR}/openvpn-server@server.service.d"
 UDP_OPENVPN_DROPIN_DIR="${SYSTEMD_DIR}/openvpn-server@server-udp.service.d"
 TCP_OPENVPN_DROPIN_DIR="${SYSTEMD_DIR}/openvpn-server@server-tcp.service.d"
+OPENVPN_ROLE=""
+
+prompt_for_openvpn_role() {
+  local role_choice
+
+  while true; do
+    echo
+    read -r -p "本机是 client 还是 server？(可以只输入首字母) [client/server] (default: client): " role_choice
+    if [ -z "$role_choice" ]; then
+      OPENVPN_ROLE="client"
+      return 0
+    fi
+
+    case "${role_choice:0:1}" in
+      [Cc])
+        OPENVPN_ROLE="client"
+        return 0
+        ;;
+      [Ss])
+        OPENVPN_ROLE="server"
+        return 0
+        ;;
+    esac
+
+    echo "Invalid role choice. Allowed values: client, server" >&2
+  done
+}
 
 ask_yes_no() {
   local prompt="$1"
@@ -615,26 +645,28 @@ print_post_install_checks() {
   ss -lntup | grep -E 'openvpn|:1194\b' || true
 }
 
-for required_file in "$ASSIGN_SOURCE" "$CLIENT_SOURCE" "$REVOKE_SOURCE" "$INSTALL_SOURCE"; do
+for required_file in "$ASSIGN_SOURCE" "$CLIENT_SOURCE" "$REVOKE_SOURCE" "$INSTALL_SOURCE" "$FIX_ROUTE_SOURCE"; do
   if [ ! -f "$required_file" ]; then
     echo "Required file not found: $required_file" >&2
     exit 1
   fi
 done
 
+prompt_for_openvpn_role
 confirm_overwrite_existing_install
 
-if { [ ! -f "$SERVER_CONF" ] && [ ! -f "${SERVER_DIR}/server.conf" ]; } || [ ! -d "$EASYRSA_DIR" ]; then
+if [ "$OPENVPN_ROLE" = "server" ] && { [ ! -f "$SERVER_CONF" ] && [ ! -f "${SERVER_DIR}/server.conf" ]; } || [ ! -d "$EASYRSA_DIR" ]; then
   run_root_cmd bash "$INSTALL_SOURCE" --auto
 fi
 
-mkdir -p "$SERVER_DIR" "$UDP_CCD_DIR" "$TCP_CCD_DIR" "$CLIENT_DIR"
+mkdir -p "$SERVER_DIR" "$UDP_CCD_DIR" "$TCP_CCD_DIR" "$CLIENT_DIR" "$CLIENT_OPENVPN_DIR"
 mkdir -p "$PWD_AUTH_DIR"
 
 deploy_file "$INSTALL_SOURCE" "$INSTALL_TARGET" 700
 deploy_file "$CLIENT_SOURCE" "$CLIENT_TARGET" 700
 deploy_file "$REVOKE_SOURCE" "$REVOKE_TARGET" 700
 deploy_file "$ASSIGN_SOURCE" "$ASSIGN_TARGET" 700
+deploy_file "$FIX_ROUTE_SOURCE" "$FIX_ROUTE_TARGET" 700
 deploy_pwd_auth_verify_script
 
 ensure_common_artifact_names
@@ -645,15 +677,17 @@ chmod 700 "$UDP_CCD_DIR"
 chmod 700 "$TCP_CCD_DIR"
 chmod 700 "$CLIENT_DIR"
 
-ensure_server_conf_has_ccd
-ensure_udp_server_conf
-ensure_tcp_server_conf
-ensure_cross_subnet_routes
-ensure_firewall_services
-ensure_tcp_selinux_port
-ensure_initial_client_ccd
-migrate_openvpn_instances
-restart_openvpn
+if [ "$OPENVPN_ROLE" = "server" ]; then
+  ensure_server_conf_has_ccd
+  ensure_udp_server_conf
+  ensure_tcp_server_conf
+  ensure_cross_subnet_routes
+  ensure_firewall_services
+  ensure_tcp_selinux_port
+  ensure_initial_client_ccd
+  migrate_openvpn_instances
+  restart_openvpn
+fi
 
 ln -sfn "$CLIENT_TARGET" "$CLIENT_LINK"
 ln -sfn "$REVOKE_TARGET" "$REVOKE_LINK"
@@ -664,6 +698,9 @@ echo "TCP server config: $TCP_SERVER_CONF"
 echo "UDP CCD dir: $UDP_CCD_DIR"
 echo "TCP CCD dir: $TCP_CCD_DIR"
 echo "Client profiles dir: $CLIENT_DIR"
+echo "Fix routes script: $FIX_ROUTE_TARGET"
 echo "Client creation command: $CLIENT_LINK [--proto udp|tcp] <client-name>"
 echo "Client revocation command: $REVOKE_LINK <client-name>"
-print_post_install_checks
+if [ "$OPENVPN_ROLE" = "server" ]; then
+  print_post_install_checks
+fi

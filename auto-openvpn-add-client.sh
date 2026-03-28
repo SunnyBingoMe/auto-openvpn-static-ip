@@ -10,6 +10,7 @@ PWD_AUTH_USERNAME=""
 PWD_AUTH_PASSWORD=""
 PWD_AUTH_PASSWORD_CONFIRM=""
 USE_MANUAL_PWD_AUTH="yes"
+CLIENT_OS=""
 
 SCRIPT_PATH="$(readlink -f "$0")"
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
@@ -97,6 +98,32 @@ normalize_proto_value() {
       return 1
       ;;
   esac
+}
+
+prompt_for_client_os() {
+  local os_choice
+
+  while true; do
+    echo
+    read -r -p "Client 是 Linux 还是 Windows？(可以只输入首字母) [Linux/Windows] (default: Linux): " os_choice
+    if [ -z "$os_choice" ]; then
+      CLIENT_OS="linux"
+      return 0
+    fi
+
+    case "${os_choice:0:1}" in
+      [Ll])
+        CLIENT_OS="linux"
+        return 0
+        ;;
+      [Ww])
+        CLIENT_OS="windows"
+        return 0
+        ;;
+    esac
+
+    echo "Invalid client OS choice. Allowed values: Linux, Windows" >&2
+  done
 }
 
 prompt_for_profile_proto() {
@@ -573,7 +600,8 @@ rewrite_profile_for_protocol() {
       -v local_route_network="$local_route_network" \
       -v local_route_mask="$local_route_mask" \
       -v peer_route_network="$peer_route_network" \
-      -v peer_route_mask="$peer_route_mask" '
+      -v peer_route_mask="$peer_route_mask" \
+      -v client_os="$CLIENT_OS" '
     $1 == "proto" {
       print "proto " proto
       next
@@ -587,11 +615,16 @@ rewrite_profile_for_protocol() {
     }
     { print }
     END {
-      if (local_route_network != "" && local_route_mask != "") {
-        print "route " local_route_network " " local_route_mask
-      }
-      if (peer_route_network != "" && peer_route_mask != "") {
-        print "route " peer_route_network " " peer_route_mask
+      if (client_os == "linux") {
+        print "script-security 2"
+        print "up /etc/openvpn/client/fix-routes.sh"
+      } else {
+        if (local_route_network != "" && local_route_mask != "") {
+          print "route " local_route_network " " local_route_mask
+        }
+        if (peer_route_network != "" && peer_route_mask != "") {
+          print "route " peer_route_network " " peer_route_mask
+        }
       }
     }
   ' "$source_file" > "$tmp_file" || {
@@ -615,6 +648,7 @@ require_root "${ORIGINAL_ARGS[@]}"
 parse_args "$@"
 validate_client_name
 preprocess_profile_proto_from_client_name
+prompt_for_client_os
 prompt_auth_mode
 prompt_pwd_auth_credentials
 

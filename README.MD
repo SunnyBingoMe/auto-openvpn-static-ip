@@ -7,7 +7,7 @@
 ```bash
 git clone https://github.com/SunnyBingoMe/auto-openvpn-static-ip.git
 cd auto-openvpn-static-ip
-sudo sh ./install-auto-openvpn.sh
+sudo bash ./install-auto-openvpn.sh
 ```
 
 ## 效果

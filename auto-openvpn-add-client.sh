@@ -342,6 +342,55 @@ embed_inline_auth_block() {
   mv -f "$tmp_file" "$target_file"
 }
 
+seperate_auth_user_pass_path_for_linux() {
+  local target_file="$1"
+  local auth_path="$2"
+  local tmp_file
+
+  tmp_file="$(mktemp "${target_file}.tmp.XXXXXX")"
+  awk -v auth_path="$auth_path" '
+    BEGIN {
+      replaced = 0
+      in_auth_block = 0
+    }
+    /^<auth-user-pass>$/ {
+      in_auth_block = 1
+      next
+    }
+    /^<\/auth-user-pass>$/ {
+      in_auth_block = 0
+      next
+    }
+    in_auth_block {
+      next
+    }
+    $1 == "auth-user-pass" {
+      if (!replaced) {
+        print "auth-user-pass " auth_path
+        replaced = 1
+      }
+      next
+    }
+    {
+      print
+    }
+    END {
+      if (!replaced) {
+        print "auth-user-pass " auth_path
+      }
+    }
+  ' "$target_file" > "$tmp_file"
+
+  mv -f "$tmp_file" "$target_file"
+}
+
+write_linux_auth_file() {
+  local auth_target="$1"
+
+  umask 077
+  printf '%s\n%s\n' "$PWD_AUTH_USERNAME" "$PWD_AUTH_PASSWORD" > "$auth_target"
+}
+
 require_root() {
   if [ "$(id -u)" -eq 0 ]; then
     return 0
@@ -443,6 +492,7 @@ cleanup_source_profile() {
 
 validate_profile_auth_mode() {
   local profile_file="$1"
+  local expected_auth_path=""
 
   if ! grep -Fqs 'auth-user-pass' "$profile_file"; then
     echo "generated profile is missing auth-user-pass directive: $profile_file" >&2
@@ -452,6 +502,19 @@ validate_profile_auth_mode() {
   if [ "$USE_MANUAL_PWD_AUTH" = "yes" ]; then
     if grep -Fqs '<auth-user-pass>' "$profile_file"; then
       echo "generated profile unexpectedly embeds credentials: $profile_file" >&2
+      exit 1
+    fi
+    return 0
+  fi
+
+  if [ "$CLIENT_OS" = "linux" ]; then
+    expected_auth_path="/etc/openvpn/client/$(basename "$profile_file").auth.txt"
+    if ! grep -Fqs "auth-user-pass ${expected_auth_path}" "$profile_file"; then
+      echo "generated profile is missing Linux auth-user-pass path: $profile_file" >&2
+      exit 1
+    fi
+    if grep -Fqs '<auth-user-pass>' "$profile_file"; then
+      echo "generated profile unexpectedly embeds credentials for Linux: $profile_file" >&2
       exit 1
     fi
     return 0
@@ -470,6 +533,7 @@ validate_profile_auth_mode() {
 
 validate_generated_client_artifacts() {
   local profile_file="$1"
+  local auth_file="${profile_file}.auth.txt"
 
   if ! client_pki_complete; then
     echo "client PKI artifacts are incomplete for ${CN}" >&2
@@ -486,6 +550,17 @@ validate_generated_client_artifacts() {
   if ! grep -Fqs "<cert>" "$profile_file" || ! grep -Fqs "<key>" "$profile_file"; then
     echo "generated profile is incomplete: $profile_file" >&2
     exit 1
+  fi
+
+  if [ "$USE_MANUAL_PWD_AUTH" != "yes" ] && [ "$CLIENT_OS" = "linux" ]; then
+    if [ ! -f "$auth_file" ]; then
+      echo "generated Linux auth file missing: $auth_file" >&2
+      exit 1
+    fi
+    if ! grep -Fxqs "$PWD_AUTH_USERNAME" "$auth_file" || ! grep -Fxqs "$PWD_AUTH_PASSWORD" "$auth_file"; then
+      echo "generated Linux auth file does not contain expected credentials: $auth_file" >&2
+      exit 1
+    fi
   fi
 
   validate_profile_auth_mode "$profile_file"
@@ -748,21 +823,36 @@ fi
 
 PROFILE_OUTPUT="$(profile_output_name)"
 PROFILE_TARGET="${CLIENT_DIR}/${PROFILE_OUTPUT}"
+PROFILE_AUTH_TARGET="${PROFILE_TARGET}.auth.txt"
 
 rewrite_profile_for_protocol "$PROFILE_SOURCE" "$PROFILE_TARGET" "$SERVER_CONF" "$PEER_SERVER_CONF"
 if [ "$USE_MANUAL_PWD_AUTH" != "yes" ]; then
-  embed_inline_auth_block "$PROFILE_TARGET"
+  if [ "$CLIENT_OS" = "linux" ]; then
+    write_linux_auth_file "$PROFILE_AUTH_TARGET"
+    seperate_auth_user_pass_path_for_linux "$PROFILE_TARGET" "/etc/openvpn/client/$(basename "$PROFILE_AUTH_TARGET")"
+  else
+    embed_inline_auth_block "$PROFILE_TARGET"
+  fi
 fi
 cleanup_source_profile "$PROFILE_SOURCE" "$PROFILE_TARGET"
 validate_generated_client_artifacts "$PROFILE_TARGET"
 chmod 600 "$PROFILE_TARGET"
+if [ -f "$PROFILE_AUTH_TARGET" ]; then
+  chmod 600 "$PROFILE_AUTH_TARGET"
+fi
 
 if [ -n "${SUDO_USER:-}" ] && getent group "$SUDO_USER" >/dev/null 2>&1; then
   chown "$SUDO_USER:$SUDO_USER" "$PROFILE_TARGET"
+  if [ -f "$PROFILE_AUTH_TARGET" ]; then
+    chown "$SUDO_USER:$SUDO_USER" "$PROFILE_AUTH_TARGET"
+  fi
 fi
 
 #echo "Created client cert in profile-config-file, also CCD, for: ${CN}"
 echo "OVPN: ${PROFILE_TARGET}"
+if [ -f "$PROFILE_AUTH_TARGET" ]; then
+  echo "AUTH: ${PROFILE_AUTH_TARGET}"
+fi
 #echo "Profile protocol: ${PROFILE_PROTO}"
 #echo "Install script: ${INSTALL_SCRIPT}"
 #echo "Assign script: ${ASSIGN_SCRIPT}"

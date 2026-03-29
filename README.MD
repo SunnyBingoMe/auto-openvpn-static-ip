@@ -298,8 +298,9 @@ sudo bash restore.sh openvpn-backup-2026-03-25_2318.tgz
 - 停掉当前 OpenVPN UDP/TCP 实例和防火墙 service
 - 先备份新服务器当前 `/etc/openvpn` 相关状态到 `/root/openvpn-restore-backup-时间戳`
 - 覆盖恢复旧服务器的证书、配置、CCD、IPP 和辅助脚本
+- 在真正开始 restore 前，先尝试通过 `cip.cc`、`ifconfig.co` 自动探测当前服务器的公网 IP，并让你确认；如果你输入 `n`，或者自动探测全部失败，脚本会要求你手动输入合法的公网 IPv4 或域名。确认后的地址会写回 `client-common-udp-tcp.txt` 的 `remote`，避免后续新导出的 `.ovpn` 继续沿用旧服务器地址；也可以直接通过 `OPENVPN_RESTORE_PUBLIC_ENDPOINT` 跳过探测与确认
 - 重新部署当前仓库约定的目录与服务并重新启动服务
-- 输出一组仍需你手工确认的事项，包括修改客户端 `.ovpn` 服务器地址，以及外围防火墙是否已放行 OpenVPN 监听端口和 VPN 转发回包路径
+- 输出一组仍需你手工确认的事项，包括旧客户端 `.ovpn` 是否已改成新服务器地址，以及外围防火墙是否已放行 OpenVPN 监听端口和 VPN 转发回包路径
 
 ### 4. 运行恢复后的 smoke test
 
@@ -312,6 +313,7 @@ sudo bash tests/restore-smoke-test.sh
 - UDP/TCP OpenVPN 服务和 repo 生成的 firewall services 是否处于 active
 - UDP/TCP 监听端口是否处于 listening 状态
 - `server-udp.conf`、`server-tcp.conf`、`client-common-udp-tcp.txt`、`easy-rsa`、CCD、IPP、证书和 `tc.key` 是否齐全
+- `client-common-udp-tcp.txt` 是否已经写入当前服务器的 `remote <endpoint> <port>`
 - 当前目录、文件和服务名是否仍然符合 repo 约定的位置
 - `net.ipv4.ip_forward` 是否已经打开
 - `pwd-auth` 校验脚本和 `client-pwd-auth` 目录是否存在，并具备 restore.sh 期望的权限/属组

@@ -37,6 +37,28 @@ SYSCTL_FORWARD_FILE="/etc/sysctl.d/99-openvpn-forward.conf"
 CLIENT_LINK="/usr/local/sbin/auto-openvpn-add-client.sh"
 REVOKE_LINK="/usr/local/sbin/auto-openvpn-revoke-client.sh"
 PUBLIC_IP_WARNINGS=()
+RESTORE_PUBLIC_ENDPOINT="${OPENVPN_RESTORE_PUBLIC_ENDPOINT:-}"
+
+prompt_yes_no_default_yes() {
+  local prompt="$1"
+  local reply
+
+  while true; do
+    read -r -t 10 -p "$prompt [Y/n]: " reply || reply=""
+    reply="${reply:-Y}"
+    case "$reply" in
+      [Yy]|[Yy][Ee][Ss])
+        return 0
+        ;;
+      [Nn]|[Nn][Oo])
+        return 1
+        ;;
+      *)
+        echo "Please answer yes or no."
+        ;;
+    esac
+  done
+}
 
 ensure_conf_has_line() {
   local conf_file="$1"
@@ -78,14 +100,20 @@ is_ipv4() {
   grep -Eq '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' <<< "$candidate"
 }
 
+is_dns_name() {
+  local candidate="$1"
+
+  grep -Eq '^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$' <<< "$candidate"
+}
+
 fetch_url_ipv4() {
   local url="$1"
   local response=""
 
-  if command -v wget >/dev/null 2>&1; then
-    response="$(wget -T 8 -t 1 -4qO- "$url" 2>/dev/null || true)"
-  elif command -v curl >/dev/null 2>&1; then
-    response="$(curl -m 8 -4fsSL "$url" 2>/dev/null || true)"
+  if command -v curl >/dev/null 2>&1; then
+    response="$(curl --fail --ipv4 --max-time 10 -fsSL "$url" 2>/dev/null || true)"
+  elif command -v wget >/dev/null 2>&1; then
+    response="$(wget -T 10 -t 1 -4qO- "$url" 2>/dev/null || true)"
   else
     return 1
   fi
@@ -97,9 +125,9 @@ fetch_cip_cc_ipv4() {
   local response=""
 
   if command -v curl >/dev/null 2>&1; then
-    response="$(curl -4fsS --max-time 8 cip.cc 2>&1 | head -n 1 | sed 's/.*: //' || true)"
+    response="$(curl --fail --ipv4 --max-time 10 -fsSL cip.cc 2>&1 | head -n 1 | sed 's/.*: //' || true)"
   elif command -v wget >/dev/null 2>&1; then
-    response="$(wget -T 8 -t 1 -4qO- "https://cip.cc" 2>/dev/null | head -n 1 | sed 's/.*: //' || true)"
+    response="$(wget -T 10 -t 1 -4qO- "https://cip.cc" 2>/dev/null | head -n 1 | sed 's/.*: //' || true)"
   else
     return 1
   fi
@@ -130,6 +158,8 @@ append_public_ip_warning() {
 detect_public_ipv4() {
   local detected_ip=""
 
+  PUBLIC_IP_WARNINGS=()
+
   detected_ip="$(fetch_cip_cc_ipv4)"
   if is_ipv4 "$detected_ip"; then
     printf '%s\n' "$detected_ip"
@@ -137,21 +167,92 @@ detect_public_ipv4() {
   fi
   append_public_ip_warning "cip.cc 服务出错或未返回有效公网 IPv4"
 
-  detected_ip="$(fetch_url_ipv4 "https://ifconfig.me/ip")"
+  detected_ip="$(fetch_url_ipv4 "https://ifconfig.co")"
   if is_ipv4 "$detected_ip"; then
     printf '%s\n' "$detected_ip"
     return 0
   fi
-  append_public_ip_warning "ifconfig.me 服务出错或未返回有效公网 IPv4"
-
-  detected_ip="$(fetch_dns_ipv4)"
-  if is_ipv4 "$detected_ip"; then
-    printf '%s\n' "$detected_ip"
-    return 0
-  fi
-  append_public_ip_warning "OpenDNS 查询服务出错或未返回有效公网 IPv4"
+  append_public_ip_warning "ifconfig.co 服务出错或未返回有效公网 IPv4"
 
   return 1
+}
+
+resolve_restore_public_endpoint() {
+  if [ -n "$RESTORE_PUBLIC_ENDPOINT" ]; then
+    printf '%s\n' "$RESTORE_PUBLIC_ENDPOINT"
+    return 0
+  fi
+
+  local detected_endpoint
+  local manual_endpoint
+
+  detected_endpoint="$(detect_public_ipv4 || true)"
+  if [ -n "$detected_endpoint" ]; then
+    echo
+    if prompt_yes_no_default_yes "Detected public endpoint: ${detected_endpoint}. Use it?"; then
+      printf '%s\n' "$detected_endpoint"
+      return 0
+    fi
+  elif [ "${#PUBLIC_IP_WARNINGS[@]}" -gt 0 ]; then
+    printf 'Public endpoint detection warnings:\n' >&2
+    printf '  - %s\n' "${PUBLIC_IP_WARNINGS[@]}" >&2
+  fi
+
+  while true; do
+    echo
+    read -r -p "Public IPv4 address or DNS name: " manual_endpoint
+    if is_ipv4 "$manual_endpoint" || is_dns_name "$manual_endpoint"; then
+      printf '%s\n' "$manual_endpoint"
+      return 0
+    fi
+    echo "Please enter a valid IPv4 address or fully qualified DNS name." >&2
+  done
+}
+
+confirm_restore_public_endpoint() {
+  RESTORE_PUBLIC_ENDPOINT="$(resolve_restore_public_endpoint)"
+}
+
+refresh_client_common_remote() {
+  local udp_port
+  local tmp_file
+
+  [ -f "$CLIENT_COMMON_FILE" ] || {
+    echo "Shared client template not found: $CLIENT_COMMON_FILE" >&2
+    exit 1
+  }
+
+  if [ -z "$RESTORE_PUBLIC_ENDPOINT" ]; then
+    echo "Failed to determine the current public endpoint for restored client profiles." >&2
+    exit 1
+  fi
+
+  udp_port="$(extract_server_value "$SERVER_CONF" port)"
+  [ -n "$udp_port" ] || udp_port=1194
+  tmp_file="$(mktemp "${CLIENT_COMMON_FILE}.tmp.XXXXXX")"
+
+  awk -v public_endpoint="$RESTORE_PUBLIC_ENDPOINT" -v udp_port="$udp_port" '
+    BEGIN {
+      updated_remote = 0
+    }
+    $1 == "remote" {
+      if (!updated_remote) {
+        print "remote " public_endpoint " " udp_port
+        updated_remote = 1
+      }
+      next
+    }
+    {
+      print
+    }
+    END {
+      if (!updated_remote) {
+        print "remote " public_endpoint " " udp_port
+      }
+    }
+  ' "$CLIENT_COMMON_FILE" > "$tmp_file"
+
+  mv "$tmp_file" "$CLIENT_COMMON_FILE"
 }
 
 ARCHIVE_PATH="${1:-}"
@@ -639,6 +740,7 @@ ensure_archive_entry "etc/openvpn/server/to-assign-ip-to-client.sh"
 ensure_archive_entry "etc/openvpn/ccd-udp/"
 ensure_archive_entry "etc/openvpn/ccd-tcp/"
 
+confirm_restore_public_endpoint
 safe_tar_extract
 stop_services
 backup_current_state
@@ -649,6 +751,7 @@ deploy_pwd_auth_verify_script
 ensure_udp_server_conf
 ensure_tcp_server_conf
 ensure_cross_subnet_routes
+refresh_client_common_remote
 ensure_pwd_auth_access
 ensure_runtime_state_access
 migrate_openvpn_instances
@@ -656,5 +759,5 @@ restart_services
 
 echo "Restore completed from: $ARCHIVE_PATH"
 echo "Rollback backup saved to: $ROLLBACK_DIR"
-echo "Existing clients should only need the new server IP in their .ovpn remote line."
+echo "New client exports will use the refreshed public endpoint from this restored server."
 print_manual_checklist

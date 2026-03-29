@@ -226,6 +226,26 @@ check_runtime_state_access() {
   check_group "$TCP_IPP_FILE" 'TCP ipp file'
 }
 
+check_client_common_remote() {
+  local remote_host
+  local remote_port
+
+  remote_host="$(awk '$1 == "remote" { print $2; exit }' "$CLIENT_COMMON_FILE" 2>/dev/null || true)"
+  remote_port="$(awk '$1 == "remote" { print $3; exit }' "$CLIENT_COMMON_FILE" 2>/dev/null || true)"
+
+  if [ -n "$remote_host" ]; then
+    pass "shared client template remote host set: $remote_host"
+  else
+    fail "shared client template remote host missing: $CLIENT_COMMON_FILE"
+  fi
+
+  if [ -n "$remote_port" ]; then
+    pass "shared client template remote port set: $remote_port"
+  else
+    fail "shared client template remote port missing: $CLIENT_COMMON_FILE"
+  fi
+}
+
 main() {
   local udp_port
   local tcp_port
@@ -249,6 +269,7 @@ main() {
 
   check_credentials_dir
   check_runtime_state_access
+  check_client_common_remote
 
   for helper_script in "${HELPER_SCRIPTS[@]}"; do
     check_executable "$helper_script" 'restored helper script'

@@ -485,6 +485,25 @@ cleanup_upstream_single_stack_artifacts() {
   fi
 }
 
+cleanup_server_artifacts_for_client_role() {
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl disable --now openvpn-server@server-udp.service >/dev/null 2>&1 || true
+    systemctl disable --now openvpn-server@server-tcp.service >/dev/null 2>&1 || true
+    systemctl disable --now openvpn@server.service >/dev/null 2>&1 || true
+    systemctl disable --now openvpn-server@server.service >/dev/null 2>&1 || true
+    systemctl disable --now openvpn-iptables-udp.service >/dev/null 2>&1 || true
+    systemctl disable --now openvpn-iptables-tcp.service >/dev/null 2>&1 || true
+    systemctl disable --now openvpn-iptables-tcp-udp-exchange-rules.service >/dev/null 2>&1 || true
+    systemctl disable --now openvpn-iptables.service >/dev/null 2>&1 || true
+  fi
+
+  rm -rf "$SERVER_DIR" "$UDP_CCD_DIR" "$TCP_CCD_DIR" "$CLIENT_DIR"
+  rm -rf "$UDP_OPENVPN_DROPIN_DIR" "$TCP_OPENVPN_DROPIN_DIR"
+  rm -f "$UDP_FIREWALL_SERVICE" "$TCP_FIREWALL_SERVICE" "$TCP_UDP_EXCHANGE_FIREWALL_SERVICE"
+
+  cleanup_upstream_single_stack_artifacts
+}
+
 ensure_cross_subnet_routes() {
   local udp_network
   local udp_mask
@@ -687,7 +706,7 @@ done
 prompt_for_openvpn_role
 confirm_overwrite_existing_install
 
-if [ "$OPENVPN_ROLE" = "server" ] && [ ! -f "$SERVER_CONF" ] || [ ! -d "$EASYRSA_DIR" ]; then
+if [ "$OPENVPN_ROLE" = "server" ] && { [ ! -f "$SERVER_CONF" ] || [ ! -d "$EASYRSA_DIR" ]; }; then
   run_root_cmd bash "$INSTALL_SOURCE" --auto
 fi
 
@@ -720,6 +739,7 @@ if [ "$OPENVPN_ROLE" = "server" ]; then
   migrate_openvpn_instances
   restart_openvpn
 else
+  cleanup_server_artifacts_for_client_role
   mkdir -p "$CLIENT_OPENVPN_DIR"
   deploy_file "$FIX_ROUTE_SOURCE" "$FIX_ROUTE_TARGET" 700
 fi

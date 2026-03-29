@@ -352,6 +352,8 @@ stop_services() {
     return 0
   fi
 
+  systemctl disable --now openvpn@server.service >/dev/null 2>&1 || true
+  systemctl disable --now openvpn-server@server.service >/dev/null 2>&1 || true
   systemctl stop openvpn-server@server-udp.service >/dev/null 2>&1 || true
   systemctl stop openvpn-server@server-tcp.service >/dev/null 2>&1 || true
   systemctl stop openvpn-iptables-udp.service >/dev/null 2>&1 || true

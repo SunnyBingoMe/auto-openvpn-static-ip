@@ -29,7 +29,7 @@ failures=0
 warnings=0
 
 pass() {
-  printf '[PASS] %s\n' "$1"
+  printf '[OK] %s\n' "$1"
 }
 
 warn() {
@@ -38,7 +38,7 @@ warn() {
 }
 
 fail() {
-  printf '[FAIL] %s\n' "$1" >&2
+  printf '[FAILED!] %s\n' "$1" >&2
   failures=$((failures + 1))
 }
 

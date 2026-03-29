@@ -18,8 +18,6 @@ UDP_FIREWALL_SERVICE="openvpn-iptables-udp.service"
 TCP_FIREWALL_SERVICE="openvpn-iptables-tcp.service"
 TCP_UDP_EXCHANGE_FIREWALL_SERVICE="openvpn-iptables-tcp-udp-exchange-rules.service"
 UDP_PORT_DEFAULT=1194
-LEGACY_FIREWALL_UNIT="/etc/systemd/system/openvpn-iptables.service"
-LEGACY_FIREWALL_TARGET="/etc/systemd/system/openvpn-iptables-udp.service"
 HELPER_SCRIPTS=(
   "${SERVER_DIR}/to-get-from-hwdsl2.sh"
   "${SERVER_DIR}/auto-openvpn-add-client.sh"
@@ -236,13 +234,8 @@ main() {
     check_executable "$helper_script" 'restored helper script'
   done
 
-  check_symlink_target "${SERVER_DIR}/server.conf" "$SERVER_CONF" 'legacy server.conf symlink'
-  check_symlink_target "${SERVER_DIR}/client-common.txt" "$CLIENT_COMMON_FILE" 'legacy client-common.txt symlink'
-  check_symlink_target "${OPENVPN_DIR}/ccd" "$UDP_CCD_DIR" 'legacy CCD symlink'
-  check_symlink_target "${OPENVPN_DIR}/client" "$CLIENT_DIR" 'legacy client dir symlink'
   check_symlink_target "/usr/local/sbin/auto-openvpn-add-client.sh" "${SERVER_DIR}/auto-openvpn-add-client.sh" 'client add symlink'
   check_symlink_target "/usr/local/sbin/auto-openvpn-revoke-client.sh" "${SERVER_DIR}/auto-openvpn-revoke-client.sh" 'client revoke symlink'
-  check_symlink_target "$LEGACY_FIREWALL_UNIT" "$LEGACY_FIREWALL_TARGET" 'legacy firewall unit symlink'
 
   check_service_active 'openvpn-server@server-udp.service' 'UDP OpenVPN service'
   check_service_active 'openvpn-server@server-tcp.service' 'TCP OpenVPN service'

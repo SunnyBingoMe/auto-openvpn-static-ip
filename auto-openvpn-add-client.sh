@@ -17,7 +17,6 @@ SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 
 DEFAULT_CLIENT_DIR="/etc/openvpn/client-udp-tcp"
 UDP_CCD_DIR="/etc/openvpn/ccd-udp"
-CCD_DIR="/etc/openvpn/ccd"
 TCP_CCD_DIR="/etc/openvpn/ccd-tcp"
 SERVER_DIR="/etc/openvpn/server"
 UDP_IPP_FILE="${OPENVPN_UDP_IPP_FILE:-${SERVER_DIR}/ipp-udp.txt}"

@@ -24,9 +24,9 @@ assert_contains "$ROOT_DIR/auto-openvpn-add-client.sh" 'cleanup_source_profile '
 assert_contains "$ROOT_DIR/auto-openvpn-add-client.sh" 'server-udp\.conf'
 assert_contains "$ROOT_DIR/auto-openvpn-add-client.sh" 'server-tcp\.conf'
 assert_contains "$ROOT_DIR/auto-openvpn-add-client.sh" 'resolve_peer_server_conf\(\)'
-assert_contains "$ROOT_DIR/auto-openvpn-add-client.sh" "printf '%s\\.udp\\.ovpn\\\\n' \"\\\$PROFILE_NAME_BASE\""
-assert_contains "$ROOT_DIR/auto-openvpn-add-client.sh" "printf '%s\\.tcp\\.ovpn\\\\n' \"\\\$PROFILE_NAME_BASE\""
-assert_contains "$ROOT_DIR/auto-openvpn-add-client.sh" 'validate_profile_embeds\('
+assert_contains "$ROOT_DIR/auto-openvpn-add-client.sh" "printf '%s\\.udp\\.%s\\.ovpn"
+assert_contains "$ROOT_DIR/auto-openvpn-add-client.sh" "printf '%s\\.tcp\\.%s\\.ovpn"
+assert_contains "$ROOT_DIR/auto-openvpn-add-client.sh" 'validate_generated_client_artifacts\('
 assert_contains "$ROOT_DIR/auto-openvpn-add-client.sh" 'OPENVPN_CCD_DIR="\$TCP_CCD_DIR"'
 assert_contains "$ROOT_DIR/auto-openvpn-add-client.sh" 'OPENVPN_SUBNET_PREFIX="\$TCP_SUBNET_PREFIX"'
 assert_contains "$ROOT_DIR/auto-openvpn-add-client.sh" 'peer_route_network'

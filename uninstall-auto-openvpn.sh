@@ -21,7 +21,6 @@ require_root "$@"
 OPENVPN_DIR="/etc/openvpn"
 SERVER_DIR="${OPENVPN_DIR}/server"
 UDP_CCD_DIR="${OPENVPN_DIR}/ccd-udp"
-CCD_DIR="${OPENVPN_DIR}/ccd"
 TCP_CCD_DIR="${OPENVPN_DIR}/ccd-tcp"
 CLIENT_DIR="${OPENVPN_DIR}/client-udp-tcp"
 EASYRSA_DIR="${SERVER_DIR}/easy-rsa"
@@ -29,9 +28,7 @@ UDP_IPP_FILE="${SERVER_DIR}/ipp-udp.txt"
 TCP_IPP_FILE="${SERVER_DIR}/ipp-tcp.txt"
 SERVER_CONF="${SERVER_DIR}/server-udp.conf"
 TCP_SERVER_CONF="${SERVER_DIR}/server-tcp.conf"
-LEGACY_SERVER_CONF="${SERVER_DIR}/server.conf"
 CLIENT_COMMON_FILE="${SERVER_DIR}/client-common-udp-tcp.txt"
-LEGACY_CLIENT_COMMON_FILE="${SERVER_DIR}/client-common.txt"
 ASSIGN_TARGET="${SERVER_DIR}/to-assign-ip-to-client.sh"
 CLIENT_TARGET="${SERVER_DIR}/auto-openvpn-add-client.sh"
 REVOKE_TARGET="${SERVER_DIR}/auto-openvpn-revoke-client.sh"
@@ -42,10 +39,8 @@ UDP_FIREWALL_SERVICE="/etc/systemd/system/openvpn-iptables-udp.service"
 TCP_FIREWALL_SERVICE="/etc/systemd/system/openvpn-iptables-tcp.service"
 TCP_UDP_EXCHANGE_FIREWALL_SERVICE="/etc/systemd/system/openvpn-iptables-tcp-udp-exchange-rules.service"
 LEGACY_FIREWALL_SERVICE="/etc/systemd/system/openvpn-iptables.service"
-UPSTREAM_LIMITNPROC_DROPIN="/etc/systemd/system/openvpn-server@server.service.d/disable-limitnproc.conf"
 UPSTREAM_SYSCTL_FORWARD="/etc/sysctl.d/99-openvpn-forward.conf"
 UPSTREAM_SYSCTL_OPTIMIZE="/etc/sysctl.d/99-openvpn-optimize.conf"
-LEGACY_IPP_FILE="${OPENVPN_DIR}/ipp.txt"
 RCLOCAL_FILE="/etc/rc.local"
 
 ask_yes_no() {
@@ -193,7 +188,6 @@ if ! ask_yes_no "是否删除 OpenVPN server 现有配置？" "y"; then
   keep_server_config=true
 fi
 
-stop_service_if_present openvpn-server@server.service
 stop_service_if_present openvpn-server@server-udp.service
 stop_service_if_present openvpn-server@server-tcp.service
 stop_service_if_present openvpn-iptables-udp.service
@@ -209,12 +203,11 @@ remove_if_exists "$INSTALL_TARGET"
 remove_if_exists "$UDP_FIREWALL_SERVICE"
 remove_if_exists "$TCP_FIREWALL_SERVICE"
 remove_if_exists "$TCP_UDP_EXCHANGE_FIREWALL_SERVICE"
-remove_if_exists "$LEGACY_FIREWALL_SERVICE"
+  remove_if_exists "$LEGACY_FIREWALL_SERVICE"
 
 if [ "$keep_client_config" = false ]; then
   remove_if_exists "$UDP_CCD_DIR"
   remove_if_exists "$TCP_CCD_DIR"
-  remove_if_exists "$CCD_DIR"
   remove_if_exists "$CLIENT_DIR"
   remove_if_exists "$UDP_IPP_FILE"
   remove_if_exists "$TCP_IPP_FILE"
@@ -226,21 +219,14 @@ fi
 if [ "$keep_server_config" = false ]; then
   remove_if_exists "$SERVER_CONF"
   remove_if_exists "$TCP_SERVER_CONF"
-  remove_if_exists "$LEGACY_SERVER_CONF"
   remove_if_exists "$CLIENT_COMMON_FILE"
-  remove_if_exists "$LEGACY_CLIENT_COMMON_FILE"
 else
   echo "保留现有 OpenVPN server 配置。"
 fi
 
 if ask_yes_no "是否删除上游 OpenVPN 写入的系统调优文件和服务 drop-in（sysctl、disable-limitnproc）？" "y"; then
-  remove_if_exists "$UPSTREAM_LIMITNPROC_DROPIN"
   remove_if_exists "$UPSTREAM_SYSCTL_FORWARD"
   remove_if_exists "$UPSTREAM_SYSCTL_OPTIMIZE"
-fi
-
-if ask_yes_no "是否删除旧版 OpenVPN 的 ipp 记录文件 ${LEGACY_IPP_FILE}？" "y"; then
-  remove_if_exists "$LEGACY_IPP_FILE"
 fi
 
 if ask_yes_no "是否删除 /etc/rc.local 中由 OpenVPN 安装写入的启动规则？" "y"; then

@@ -21,7 +21,6 @@ require_root "$@"
 OPENVPN_DIR="/etc/openvpn"
 SERVER_DIR="${OPENVPN_DIR}/server"
 UDP_CCD_DIR="${OPENVPN_DIR}/ccd-udp"
-LEGACY_CCD_DIR="${OPENVPN_DIR}/ccd"
 TCP_CCD_DIR="${OPENVPN_DIR}/ccd-tcp"
 CLIENT_DIR="${OPENVPN_DIR}/client-udp-tcp"
 SERVER_CONF="${SERVER_DIR}/server-udp.conf"
@@ -252,7 +251,6 @@ stop_services() {
     return 0
   fi
 
-  systemctl disable --now openvpn-server@server.service >/dev/null 2>&1 || true
   systemctl stop openvpn-server@server-udp.service >/dev/null 2>&1 || true
   systemctl stop openvpn-server@server-tcp.service >/dev/null 2>&1 || true
   systemctl stop openvpn-iptables-udp.service >/dev/null 2>&1 || true
@@ -321,17 +319,8 @@ restore_compat_links() {
   chown nobody:nogroup "${SERVER_DIR}/crl.pem" 2>/dev/null || true
   chmod o+x "$SERVER_DIR"
 
-  rm -rf "$LEGACY_CCD_DIR" "${OPENVPN_DIR}/client"
-  ln -sfn "$SERVER_CONF" "${SERVER_DIR}/server.conf"
-  ln -sfn "$CLIENT_COMMON_FILE" "${SERVER_DIR}/client-common.txt"
-  ln -sfn "$UDP_CCD_DIR" "$LEGACY_CCD_DIR"
-  ln -sfn "$CLIENT_DIR" "${OPENVPN_DIR}/client"
   ln -sfn "${SERVER_DIR}/auto-openvpn-add-client.sh" "$CLIENT_LINK"
   ln -sfn "${SERVER_DIR}/auto-openvpn-revoke-client.sh" "$REVOKE_LINK"
-
-  if [ -e "$UDP_FIREWALL_SERVICE" ]; then
-    ln -sfn "$UDP_FIREWALL_SERVICE" "$LEGACY_FIREWALL_SERVICE"
-  fi
 }
 
 deploy_pwd_auth_verify_script() {
@@ -369,7 +358,7 @@ detect_openvpn_runtime_group() {
   local conf_file
   local runtime_group
 
-  for conf_file in "$SERVER_CONF" "${SERVER_DIR}/server.conf"; do
+  for conf_file in "$SERVER_CONF"; do
     [ -f "$conf_file" ] || continue
     runtime_group="$(awk '$1 == "group" { print $2; exit }' "$conf_file")"
     if [ -n "$runtime_group" ] && getent group "$runtime_group" >/dev/null 2>&1; then
@@ -482,19 +471,12 @@ ensure_cross_subnet_routes() {
 }
 
 sync_openvpn_dropins() {
-  local source_dir="/etc/systemd/system/openvpn-server@server.service.d"
   local target_dir="$1"
 
   mkdir -p "$target_dir"
-
-  if [ -d "$source_dir" ]; then
-    cp -a "$source_dir"/. "$target_dir"/
-  fi
 }
 
 migrate_openvpn_instances() {
-  local legacy_service="openvpn-server@server.service"
-  local legacy_dropin_dir="/etc/systemd/system/openvpn-server@server.service.d"
   local udp_dropin_dir="/etc/systemd/system/openvpn-server@server-udp.service.d"
   local tcp_dropin_dir="/etc/systemd/system/openvpn-server@server-tcp.service.d"
 
@@ -504,12 +486,6 @@ migrate_openvpn_instances() {
 
   sync_openvpn_dropins "$udp_dropin_dir"
   sync_openvpn_dropins "$tcp_dropin_dir"
-
-  if [ -d "$legacy_dropin_dir" ]; then
-    rm -rf "$legacy_dropin_dir"
-  fi
-
-  systemctl disable --now "$legacy_service" >/dev/null 2>&1 || true
 }
 
 converge_firewall_units() {

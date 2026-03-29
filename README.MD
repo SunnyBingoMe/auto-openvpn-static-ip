@@ -15,7 +15,7 @@ sudo bash ./install-auto-openvpn.sh
 - 运行 `bash install-auto-openvpn.sh` 时，如果当前用户不是 root 但可以使用 `sudo`，脚本会自动提权继续执行。
 - 如果检测到机器上已经存在 `/etc/openvpn/server` 安装，安装脚本会先询问是否覆盖；默认答案为覆盖。
 - 覆盖现有安装时，会尽量保留当前客户端继续连接所依赖的状态，例如 `easy-rsa`/证书、`tc.key`、`client-pwd-auth`、`ccd-udp`、`ccd-tcp`、`ipp-udp.txt`、`ipp-tcp.txt`。
-- 覆盖现有安装时，会重建辅助脚本、兼容软链和客户端模板中的派生行；例如会把 `pull-filter ignore dhcp-option DNS` 规范化为 `pull-filter ignore "dhcp-option DNS"`，但不会擅自猜测或改写已有模板中的 `remote` 终端地址。
+- 覆盖现有安装时，会重建辅助脚本和客户端模板中的派生行；例如会把 `pull-filter ignore dhcp-option DNS` 规范化为 `pull-filter ignore "dhcp-option DNS"`，但不会擅自猜测或改写已有模板中的 `remote` 终端地址。
 - 安装完成后，OpenVPN 服务端配置和辅助脚本会放到 `/etc/openvpn` 体系下。
 - 运行 `sudo auto-openvpn-add-client.sh my_client_name` 时，会自动：
   - 创建客户端证书和 `.ovpn` 配置文件
@@ -41,7 +41,7 @@ sudo bash ./install-auto-openvpn.sh
 - `/etc/openvpn/server/to-assign-ip-to-client.sh`：CCD 静态 IP 分配脚本
 - `/etc/openvpn/ccd-udp`：UDP 客户端 CCD 目录
 - `/etc/openvpn/ccd-tcp`：TCP 客户端 CCD 目录
-- `/etc/openvpn/client-udp-tcp`：未通过普通用户 `sudo` 调用时的 `.ovpn` 默认回退目录
+- `/etc/openvpn/client-udp-tcp`：未通过普通用户 `sudo` 调用时的 `.ovpn` 默认回退目录，也是安装后唯一保留的客户端 profile 目录
 - `/usr/local/sbin/auto-openvpn-add-client.sh`：便于直接调用的命令入口
 
 ## 使用方式
@@ -56,11 +56,12 @@ bash install-auto-openvpn.sh
 安装脚本会：
 
 - 调用 `to-get-from-hwdsl2.sh --auto` 进行无人值守安装
-- 把上游默认生成的 `server.conf` 收敛为显式命名的 `server-udp.conf`，并保留兼容软链
+- 生成显式命名的 `server-udp.conf`
 - 基于 `server-udp.conf` 额外生成 `server-tcp.conf`，把 TCP 实例放到独立的 `172.23.0.0/16` 地址池和 `/etc/openvpn/ccd-tcp`，并启动 `openvpn-server@server-udp.service` 与 `openvpn-server@server-tcp.service`
 - 自动向 UDP 客户端推送 `172.23.0.0/16` 路由，向 TCP 客户端推送 `172.22.0.0/16` 路由
-- 创建 `/etc/openvpn/ccd-udp`、`/etc/openvpn/ccd-tcp` 和 `/etc/openvpn/client-udp-tcp`，并保留兼容软链
-- 创建 `client-common-udp-tcp.txt` 作为 UDP/TCP 通用客户端模板，并保留兼容软链
+- 创建 `/etc/openvpn/ccd-udp`、`/etc/openvpn/ccd-tcp` 和 `/etc/openvpn/client-udp-tcp`
+- 创建 `client-common-udp-tcp.txt` 作为 UDP/TCP 通用客户端模板
+- 清理上游额外生成但不属于双栈规范的产物，例如 `/etc/openvpn/server/server.conf`、`/etc/openvpn/server/client-common.txt`、`/etc/openvpn/client`、`/etc/systemd/system/openvpn-iptables.service` 以及 `/etc/rc.local` 中对该单栈 firewall unit 的重启注入
 - 如果是覆盖已有安装，则在保留现有连接关键状态的前提下，按当前仓库逻辑规范化 `client-common-udp-tcp.txt` 中的派生配置行
 - 设置相应权限
 - 部署辅助脚本到 `/etc/openvpn/server`
@@ -296,7 +297,7 @@ sudo bash restore.sh openvpn-backup-2026-03-25_2318.tgz
 - 停掉当前 OpenVPN UDP/TCP 实例和防火墙 service
 - 先备份新服务器当前 `/etc/openvpn` 相关状态到 `/root/openvpn-restore-backup-时间戳`
 - 覆盖恢复旧服务器的证书、配置、CCD、IPP 和辅助脚本
-- 重建兼容软链并重新启动服务
+- 重新部署当前仓库约定的目录与服务并重新启动服务
 - 输出一组仍需你手工确认的事项，包括修改客户端 `.ovpn` 服务器地址，以及外围防火墙是否已放行 OpenVPN 监听端口和 VPN 转发回包路径
 
 ### 4. 运行恢复后的 smoke test
@@ -310,7 +311,7 @@ sudo bash tests/restore-smoke-test.sh
 - UDP/TCP OpenVPN 服务和 repo 生成的 firewall services 是否处于 active
 - UDP/TCP 监听端口是否处于 listening 状态
 - `server-udp.conf`、`server-tcp.conf`、`client-common-udp-tcp.txt`、`easy-rsa`、CCD、IPP、证书和 `tc.key` 是否齐全
-- 兼容软链是否仍然指向 repo 约定的位置
+- 当前目录、文件和服务名是否仍然符合 repo 约定的位置
 - `net.ipv4.ip_forward` 是否已经打开
 - `pwd-auth` 校验脚本和 `client-pwd-auth` 目录是否存在，并具备 restore.sh 期望的权限/属组
 

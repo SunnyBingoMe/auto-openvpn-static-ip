@@ -728,9 +728,9 @@ show_start_setup() {
 disable_limitnproc() {
 	# If running inside a container, disable LimitNPROC to prevent conflicts
 	if systemd-detect-virt -cq; then
-		mkdir /etc/systemd/system/openvpn-server@server.service.d/ 2>/dev/null
+		mkdir /etc/systemd/system/openvpn-server@server-udp.service.d/ 2>/dev/null
 		echo "[Service]
-LimitNPROC=infinity" > /etc/systemd/system/openvpn-server@server.service.d/disable-limitnproc.conf
+LimitNPROC=infinity" > /etc/systemd/system/openvpn-server@server-udp.service.d/disable-limitnproc.conf
 	fi
 }
 
@@ -802,7 +802,6 @@ remove_pkgs() {
 			zypper remove -y openvpn >/dev/null
 			rm -rf /etc/openvpn/server
 		)
-		rm -f /etc/openvpn/ipp.txt
 	else
 		# Else, OS must be CentOS, RHEL or Fedora
 		(
@@ -1011,8 +1010,8 @@ server 172.22.0.0 255.255.0.0" > "$OVPN_CONF"
 		echo 'server-ipv6 fddd:1194:1194:1194::/64' >> "$OVPN_CONF"
 	fi
 	echo 'push "redirect-gateway def1 ipv6 bypass-dhcp"' >> "$OVPN_CONF"
-	echo 'client-config-dir /etc/openvpn/ccd' >> "$OVPN_CONF"
-	echo 'ifconfig-pool-persist ipp.txt' >> "$OVPN_CONF"
+	echo 'client-config-dir /etc/openvpn/ccd-udp' >> "$OVPN_CONF"
+	echo 'ifconfig-pool-persist ipp-udp.txt' >> "$OVPN_CONF"
 	create_dns_config
 	echo 'push "block-outside-dns"' >> "$OVPN_CONF"
 	echo 'script-security 2' >> "$OVPN_CONF"
@@ -1177,7 +1176,7 @@ start_openvpn_service() {
 	if [ "$os" != "openSUSE" ]; then
 		(
 			set -x
-			systemctl enable --now openvpn-server@server.service >/dev/null 2>&1
+			systemctl enable --now openvpn-server@server-udp.service >/dev/null 2>&1
 		)
 	else
 		ln -s /etc/openvpn/server/* /etc/openvpn >/dev/null 2>&1
@@ -1363,11 +1362,11 @@ print_remove_ovpn() {
 
 disable_ovpn_service() {
 	if [ "$os" != "openSUSE" ]; then
-		systemctl disable --now openvpn-server@server.service
+		systemctl disable --now openvpn-server@server-udp.service
 	else
 		systemctl disable --now openvpn@server.service
 	fi
-	rm -f /etc/systemd/system/openvpn-server@server.service.d/disable-limitnproc.conf
+	rm -f /etc/systemd/system/openvpn-server@server-udp.service.d/disable-limitnproc.conf
 }
 
 remove_sysctl_rules() {
@@ -1523,8 +1522,8 @@ if [[ ! -e "$OVPN_CONF" ]]; then
 	install_pkgs
 	install_easyrsa
 	create_pki_and_certs
-	mkdir -p /etc/openvpn/ccd
-	chmod 700 /etc/openvpn/ccd
+	mkdir -p /etc/openvpn/ccd-udp
+	chmod 700 /etc/openvpn/ccd-udp
 	create_server_config
 	update_sysctl
 	create_firewall_rules

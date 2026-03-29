@@ -22,7 +22,6 @@ require_root "$@"
 OPENVPN_DIR="/etc/openvpn"
 SERVER_DIR="${OPENVPN_DIR}/server"
 UDP_CCD_DIR="${OPENVPN_DIR}/ccd-udp"
-CCD_DIR="${OPENVPN_DIR}/ccd"
 TCP_CCD_DIR="${OPENVPN_DIR}/ccd-tcp"
 CLIENT_DIR="${OPENVPN_DIR}/client-udp-tcp"
 SERVER_CONF="${SERVER_DIR}/server-udp.conf"
@@ -51,11 +50,9 @@ INSTALL_TARGET="${SERVER_DIR}/to-get-from-hwdsl2.sh"
 FIX_ROUTE_TARGET="${CLIENT_OPENVPN_DIR}/fix-routes.sh"
 CLIENT_LINK="/usr/local/sbin/auto-openvpn-add-client.sh"
 REVOKE_LINK="/usr/local/sbin/auto-openvpn-revoke-client.sh"
-LEGACY_OPENVPN_SERVICE="openvpn-server@server.service"
 UDP_OPENVPN_SERVICE="openvpn-server@server-udp.service"
 TCP_OPENVPN_SERVICE="openvpn-server@server-tcp.service"
 SYSTEMD_DIR="/etc/systemd/system"
-LEGACY_OPENVPN_DROPIN_DIR="${SYSTEMD_DIR}/openvpn-server@server.service.d"
 UDP_OPENVPN_DROPIN_DIR="${SYSTEMD_DIR}/openvpn-server@server-udp.service.d"
 TCP_OPENVPN_DROPIN_DIR="${SYSTEMD_DIR}/openvpn-server@server-tcp.service.d"
 OPENVPN_ROLE=""
@@ -135,7 +132,7 @@ deploy_file() {
 }
 
 install_exists() {
-  [ -f "$SERVER_CONF" ] || [ -f "${SERVER_DIR}/server.conf" ] || [ -d "$EASYRSA_DIR" ]
+  [ -f "$SERVER_CONF" ] || [ -d "$EASYRSA_DIR" ]
 }
 
 refresh_client_common_template() {
@@ -317,7 +314,7 @@ detect_openvpn_runtime_group() {
   local conf_file
   local runtime_group
 
-  for conf_file in "$SERVER_CONF" "${SERVER_DIR}/server.conf"; do
+  for conf_file in "$SERVER_CONF"; do
     [ -f "$conf_file" ] || continue
     runtime_group="$(awk '$1 == "group" { print $2; exit }' "$conf_file")"
     if [ -n "$runtime_group" ] && getent group "$runtime_group" >/dev/null 2>&1; then
@@ -403,44 +400,46 @@ ensure_udp_server_conf() {
 }
 
 ensure_common_artifact_names() {
-  local legacy_udp_conf="${SERVER_DIR}/server.conf"
-  local legacy_common_file="${SERVER_DIR}/client-common.txt"
-  local legacy_client_dir="${OPENVPN_DIR}/client"
-
   mkdir -p "$UDP_CCD_DIR" "$TCP_CCD_DIR" "$CLIENT_DIR"
   mkdir -p "$PWD_AUTH_DIR"
-
-  if [ -f "$legacy_udp_conf" ] && [ ! -f "$SERVER_CONF" ]; then
-    mv "$legacy_udp_conf" "$SERVER_CONF"
-  fi
-
-  if [ -f "$legacy_common_file" ] && [ ! -f "$CLIENT_COMMON_FILE" ]; then
-    mv "$legacy_common_file" "$CLIENT_COMMON_FILE"
-  fi
-
-  if [ -d "$legacy_client_dir" ] && [ ! -L "$legacy_client_dir" ]; then
-    mv "$legacy_client_dir"/* "$CLIENT_DIR"/ 2>/dev/null || true
-    rmdir "$legacy_client_dir" 2>/dev/null || true
-  fi
-
-  rm -f "$legacy_udp_conf" "$legacy_common_file" "$legacy_client_dir" "$CCD_DIR" "/etc/systemd/system/openvpn-iptables.service" 2>/dev/null || true
-  ln -sfn "$SERVER_CONF" "$legacy_udp_conf"
-  ln -sfn "$CLIENT_COMMON_FILE" "$legacy_common_file"
-  ln -sfn "$CLIENT_DIR" "$legacy_client_dir"
-  ln -sfn "$UDP_CCD_DIR" "$CCD_DIR"
-
-  if [ -f "/etc/systemd/system/openvpn-iptables.service" ] && [ ! -e "$UDP_FIREWALL_SERVICE" ]; then
-    mv "/etc/systemd/system/openvpn-iptables.service" "$UDP_FIREWALL_SERVICE"
-  fi
-  if [ -e "$UDP_FIREWALL_SERVICE" ]; then
-    ln -sfn "$UDP_FIREWALL_SERVICE" "/etc/systemd/system/openvpn-iptables.service"
-  fi
 
   if [ -f "$CLIENT_COMMON_FILE" ]; then
     sed -i "s#^route .*#route 172.22.0.0 255.255.0.0#" "$CLIENT_COMMON_FILE"
     if ! grep -Fqs "auth-user-pass" "$CLIENT_COMMON_FILE"; then
       printf '\nauth-user-pass\n' >> "$CLIENT_COMMON_FILE"
     fi
+  fi
+}
+
+cleanup_upstream_single_stack_artifacts() {
+  local upstream_client_dir="${OPENVPN_DIR}/client"
+  local upstream_server_conf="${SERVER_DIR}/server.conf"
+  local upstream_client_common="${SERVER_DIR}/client-common.txt"
+  local upstream_firewall_unit="/etc/systemd/system/openvpn-iptables.service"
+
+  if [ -f "$upstream_server_conf" ] && [ ! -f "$SERVER_CONF" ]; then
+    mv "$upstream_server_conf" "$SERVER_CONF"
+  fi
+  rm -f "$upstream_server_conf"
+
+  if [ -f "$upstream_client_common" ] && [ ! -f "$CLIENT_COMMON_FILE" ]; then
+    mv "$upstream_client_common" "$CLIENT_COMMON_FILE"
+  fi
+  rm -f "$upstream_client_common"
+
+  if [ -d "$upstream_client_dir" ] && [ ! -L "$upstream_client_dir" ]; then
+    mv "$upstream_client_dir"/* "$CLIENT_DIR"/ 2>/dev/null || true
+    rmdir "$upstream_client_dir" 2>/dev/null || true
+  fi
+  rm -rf "$upstream_client_dir"
+
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl disable --now openvpn-iptables.service >/dev/null 2>&1 || true
+  fi
+  rm -f "$upstream_firewall_unit"
+
+  if [ -f /etc/rc.local ]; then
+    sed --follow-symlinks -i '/^systemctl restart openvpn-iptables\.service$/d' /etc/rc.local
   fi
 }
 
@@ -579,7 +578,7 @@ ensure_tcp_selinux_port() {
 }
 
 ensure_initial_client_ccd() {
-  if [ -f "${EASYRSA_DIR}/pki/issued/client.crt" ] && [ ! -f "${CCD_DIR}/client" ]; then
+  if [ -f "${EASYRSA_DIR}/pki/issued/client.crt" ] && [ ! -f "${UDP_CCD_DIR}/client" ]; then
     "$ASSIGN_TARGET" client
   fi
 }
@@ -588,10 +587,6 @@ sync_openvpn_dropins() {
   local target_dir="$1"
 
   mkdir -p "$target_dir"
-
-  if [ -d "$LEGACY_OPENVPN_DROPIN_DIR" ]; then
-    run_root_cmd cp -a "$LEGACY_OPENVPN_DROPIN_DIR"/. "$target_dir"/
-  fi
 }
 
 migrate_openvpn_instances() {
@@ -607,11 +602,6 @@ migrate_openvpn_instances() {
     sync_openvpn_dropins "$TCP_OPENVPN_DROPIN_DIR"
   fi
 
-  if [ -d "$LEGACY_OPENVPN_DROPIN_DIR" ]; then
-    run_root_cmd rm -rf "$LEGACY_OPENVPN_DROPIN_DIR"
-  fi
-
-  run_root_cmd systemctl disable --now "$LEGACY_OPENVPN_SERVICE" >/dev/null 2>&1 || true
 }
 
 restart_openvpn() {
@@ -655,7 +645,7 @@ done
 prompt_for_openvpn_role
 confirm_overwrite_existing_install
 
-if [ "$OPENVPN_ROLE" = "server" ] && { [ ! -f "$SERVER_CONF" ] && [ ! -f "${SERVER_DIR}/server.conf" ]; } || [ ! -d "$EASYRSA_DIR" ]; then
+if [ "$OPENVPN_ROLE" = "server" ] && [ ! -f "$SERVER_CONF" ] || [ ! -d "$EASYRSA_DIR" ]; then
   run_root_cmd bash "$INSTALL_SOURCE" --auto
 fi
 
@@ -669,6 +659,7 @@ deploy_file "$ASSIGN_SOURCE" "$ASSIGN_TARGET" 700
 deploy_file "$FIX_ROUTE_SOURCE" "$FIX_ROUTE_TARGET" 700
 deploy_pwd_auth_verify_script
 
+cleanup_upstream_single_stack_artifacts
 ensure_common_artifact_names
 refresh_client_common_template
 ensure_pwd_auth_access

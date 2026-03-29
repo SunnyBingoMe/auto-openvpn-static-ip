@@ -10,7 +10,6 @@ SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 
 DEFAULT_CLIENT_DIR="/etc/openvpn/client-udp-tcp"
 UDP_CCD_DIR="${OPENVPN_UDP_CCD_DIR:-/etc/openvpn/ccd-udp}"
-CCD_DIR="${OPENVPN_CCD_DIR:-/etc/openvpn/ccd}"
 TCP_CCD_DIR="${OPENVPN_TCP_CCD_DIR:-/etc/openvpn/ccd-tcp}"
 SERVER_DIR="${OPENVPN_SERVER_DIR:-/etc/openvpn/server}"
 EASYRSA_DIR="${SERVER_DIR}/easy-rsa"
@@ -150,7 +149,6 @@ cleanup_client_files() {
     "${SCRIPT_DIR}/${CN}.udp.ovpn" \
     "${SCRIPT_DIR}/${CN}.tcp.ovpn"
 
-  rm -f "${CCD_DIR}/${CN}"
   remove_ipp_entry "$UDP_IPP_FILE"
   remove_ipp_entry "$TCP_IPP_FILE"
 }

@@ -42,6 +42,11 @@ LEGACY_FIREWALL_SERVICE="/etc/systemd/system/openvpn-iptables.service"
 UPSTREAM_SYSCTL_FORWARD="/etc/sysctl.d/99-openvpn-forward.conf"
 UPSTREAM_SYSCTL_OPTIMIZE="/etc/sysctl.d/99-openvpn-optimize.conf"
 RCLOCAL_FILE="/etc/rc.local"
+UPSTREAM_SERVER_CONF="${SERVER_DIR}/server.conf"
+UPSTREAM_CLIENT_COMMON_FILE="${SERVER_DIR}/client-common.txt"
+UDP_OPENVPN_DROPIN_DIR="/etc/systemd/system/openvpn-server@server-udp.service.d"
+TCP_OPENVPN_DROPIN_DIR="/etc/systemd/system/openvpn-server@server-tcp.service.d"
+UPSTREAM_DISABLE_LIMITNPROC_DROPIN="${UDP_OPENVPN_DROPIN_DIR}/disable-limitnproc.conf"
 
 ask_yes_no() {
   local prompt="$1"
@@ -190,9 +195,12 @@ fi
 
 stop_service_if_present openvpn-server@server-udp.service
 stop_service_if_present openvpn-server@server-tcp.service
+stop_service_if_present openvpn@server.service
+stop_service_if_present openvpn-server@server.service
 stop_service_if_present openvpn-iptables-udp.service
 stop_service_if_present openvpn-iptables-tcp.service
 stop_service_if_present openvpn-iptables-tcp-udp-exchange-rules.service
+stop_service_if_present openvpn-iptables.service
 
 remove_if_exists "$CLIENT_LINK"
 remove_if_exists "$REVOKE_LINK"
@@ -203,7 +211,8 @@ remove_if_exists "$INSTALL_TARGET"
 remove_if_exists "$UDP_FIREWALL_SERVICE"
 remove_if_exists "$TCP_FIREWALL_SERVICE"
 remove_if_exists "$TCP_UDP_EXCHANGE_FIREWALL_SERVICE"
-  remove_if_exists "$LEGACY_FIREWALL_SERVICE"
+remove_if_exists "$LEGACY_FIREWALL_SERVICE"
+remove_if_exists "$UPSTREAM_DISABLE_LIMITNPROC_DROPIN"
 
 if [ "$keep_client_config" = false ]; then
   remove_if_exists "$UDP_CCD_DIR"
@@ -220,6 +229,8 @@ if [ "$keep_server_config" = false ]; then
   remove_if_exists "$SERVER_CONF"
   remove_if_exists "$TCP_SERVER_CONF"
   remove_if_exists "$CLIENT_COMMON_FILE"
+  remove_if_exists "$UPSTREAM_SERVER_CONF"
+  remove_if_exists "$UPSTREAM_CLIENT_COMMON_FILE"
 else
   echo "保留现有 OpenVPN server 配置。"
 fi
@@ -227,6 +238,8 @@ fi
 if ask_yes_no "是否删除上游 OpenVPN 写入的系统调优文件和服务 drop-in（sysctl、disable-limitnproc）？" "y"; then
   remove_if_exists "$UPSTREAM_SYSCTL_FORWARD"
   remove_if_exists "$UPSTREAM_SYSCTL_OPTIMIZE"
+  remove_if_exists "$UDP_OPENVPN_DROPIN_DIR"
+  remove_if_exists "$TCP_OPENVPN_DROPIN_DIR"
 fi
 
 if ask_yes_no "是否删除 /etc/rc.local 中由 OpenVPN 安装写入的启动规则？" "y"; then

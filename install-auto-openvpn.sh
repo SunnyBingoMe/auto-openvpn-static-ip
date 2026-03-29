@@ -649,26 +649,26 @@ if [ "$OPENVPN_ROLE" = "server" ] && [ ! -f "$SERVER_CONF" ] || [ ! -d "$EASYRSA
   run_root_cmd bash "$INSTALL_SOURCE" --auto
 fi
 
-mkdir -p "$SERVER_DIR" "$UDP_CCD_DIR" "$TCP_CCD_DIR" "$CLIENT_DIR" "$CLIENT_OPENVPN_DIR"
-mkdir -p "$PWD_AUTH_DIR"
-
-deploy_file "$INSTALL_SOURCE" "$INSTALL_TARGET" 700
-deploy_file "$CLIENT_SOURCE" "$CLIENT_TARGET" 700
-deploy_file "$REVOKE_SOURCE" "$REVOKE_TARGET" 700
-deploy_file "$ASSIGN_SOURCE" "$ASSIGN_TARGET" 700
-deploy_file "$FIX_ROUTE_SOURCE" "$FIX_ROUTE_TARGET" 700
-deploy_pwd_auth_verify_script
-
-cleanup_upstream_single_stack_artifacts
-ensure_common_artifact_names
-refresh_client_common_template
-ensure_pwd_auth_access
-
-chmod 700 "$UDP_CCD_DIR"
-chmod 700 "$TCP_CCD_DIR"
-chmod 700 "$CLIENT_DIR"
-
 if [ "$OPENVPN_ROLE" = "server" ]; then
+  mkdir -p "$SERVER_DIR" "$UDP_CCD_DIR" "$TCP_CCD_DIR" "$CLIENT_DIR" "$CLIENT_OPENVPN_DIR"
+  mkdir -p "$PWD_AUTH_DIR"
+
+  deploy_file "$INSTALL_SOURCE" "$INSTALL_TARGET" 700
+  deploy_file "$CLIENT_SOURCE" "$CLIENT_TARGET" 700
+  deploy_file "$REVOKE_SOURCE" "$REVOKE_TARGET" 700
+  deploy_file "$ASSIGN_SOURCE" "$ASSIGN_TARGET" 700
+  deploy_file "$FIX_ROUTE_SOURCE" "$FIX_ROUTE_TARGET" 700
+  deploy_pwd_auth_verify_script
+
+  cleanup_upstream_single_stack_artifacts
+  ensure_common_artifact_names
+  refresh_client_common_template
+  ensure_pwd_auth_access
+
+  chmod 700 "$UDP_CCD_DIR"
+  chmod 700 "$TCP_CCD_DIR"
+  chmod 700 "$CLIENT_DIR"
+
   ensure_server_conf_has_ccd
   ensure_udp_server_conf
   ensure_tcp_server_conf
@@ -678,20 +678,24 @@ if [ "$OPENVPN_ROLE" = "server" ]; then
   ensure_initial_client_ccd
   migrate_openvpn_instances
   restart_openvpn
+else
+  mkdir -p "$CLIENT_OPENVPN_DIR"
+  deploy_file "$FIX_ROUTE_SOURCE" "$FIX_ROUTE_TARGET" 700
 fi
 
 ln -sfn "$CLIENT_TARGET" "$CLIENT_LINK"
 ln -sfn "$REVOKE_TARGET" "$REVOKE_LINK"
 
 echo "OpenVPN install completed."
-echo "Server config: $SERVER_CONF"
-echo "TCP server config: $TCP_SERVER_CONF"
-echo "UDP CCD dir: $UDP_CCD_DIR"
-echo "TCP CCD dir: $TCP_CCD_DIR"
-echo "Client profiles dir: $CLIENT_DIR"
-echo "Fix routes script: $FIX_ROUTE_TARGET"
-echo "Client creation command: $CLIENT_LINK [--proto udp|tcp] <client-name>"
-echo "Client revocation command: $REVOKE_LINK <client-name>"
 if [ "$OPENVPN_ROLE" = "server" ]; then
+  echo "Server config: $SERVER_CONF"
+  echo "TCP server config: $TCP_SERVER_CONF"
+  echo "UDP CCD dir: $UDP_CCD_DIR"
+  echo "TCP CCD dir: $TCP_CCD_DIR"
+  echo "Client profiles dir: $CLIENT_DIR"
+  echo "Client creation command: $CLIENT_LINK [--proto udp|tcp] <client-name>"
+  echo "Client revocation command: $REVOKE_LINK <client-name>"
   print_post_install_checks
+else
+  echo "Fix routes script: $FIX_ROUTE_TARGET"
 fi

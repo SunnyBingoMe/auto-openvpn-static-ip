@@ -23,6 +23,7 @@ SERVER_DIR="${OPENVPN_DIR}/server"
 UDP_CCD_DIR="${OPENVPN_DIR}/ccd-udp"
 TCP_CCD_DIR="${OPENVPN_DIR}/ccd-tcp"
 CLIENT_DIR="${OPENVPN_DIR}/client-udp-tcp"
+CLIENT_RUNTIME_DIR="${OPENVPN_DIR}/client"
 EASYRSA_DIR="${SERVER_DIR}/easy-rsa"
 UDP_IPP_FILE="${SERVER_DIR}/ipp-udp.txt"
 TCP_IPP_FILE="${SERVER_DIR}/ipp-tcp.txt"
@@ -89,6 +90,61 @@ stop_service_if_present() {
 
   if command -v systemctl >/dev/null 2>&1; then
     systemctl disable --now "$service_name" >/dev/null 2>&1 || true
+  fi
+}
+
+remove_matching_paths() {
+  local path
+
+  for path in "$@"; do
+    [ -e "$path" ] || [ -L "$path" ] || continue
+    rm -rf "$path"
+  done
+}
+
+remove_client_services_and_hooks() {
+  local service_file
+  local service_name
+  local hook_file
+
+  for service_file in /etc/systemd/system/openvpn-client-*.service; do
+    [ -e "$service_file" ] || continue
+    service_name="$(basename "$service_file")"
+    stop_service_if_present "$service_name"
+    remove_if_exists "$service_file"
+  done
+
+  for hook_file in /etc/networkd-dispatcher/routable.d/*openvpn-client-restart; do
+    [ -e "$hook_file" ] || continue
+    remove_if_exists "$hook_file"
+  done
+}
+
+remove_openvpn_iptables_rules() {
+  local iptables_cmd
+  local ip6tables_cmd
+
+  iptables_cmd="$(command -v iptables 2>/dev/null || true)"
+  ip6tables_cmd="$(command -v ip6tables 2>/dev/null || true)"
+
+  if [ -n "$iptables_cmd" ]; then
+    "$iptables_cmd" -w 5 -D FORWARD -s 172.22.0.0/16 -j ACCEPT >/dev/null 2>&1 || true
+    "$iptables_cmd" -w 5 -D FORWARD -s 172.23.0.0/16 -j ACCEPT >/dev/null 2>&1 || true
+    "$iptables_cmd" -w 5 -D FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT >/dev/null 2>&1 || true
+    "$iptables_cmd" -w 5 -D INPUT -p udp --dport 1194 -j ACCEPT >/dev/null 2>&1 || true
+    "$iptables_cmd" -w 5 -D INPUT -p tcp --dport 1194 -j ACCEPT >/dev/null 2>&1 || true
+    "$iptables_cmd" -w 5 -t nat -D POSTROUTING -s 172.22.0.0/16 ! -d 172.22.0.0/16 -j MASQUERADE >/dev/null 2>&1 || true
+    "$iptables_cmd" -w 5 -t nat -D POSTROUTING -s 172.22.0.0/16 -d 172.23.0.0/16 -j RETURN >/dev/null 2>&1 || true
+    "$iptables_cmd" -w 5 -t nat -D POSTROUTING -s 172.23.0.0/16 -d 172.22.0.0/16 -j RETURN >/dev/null 2>&1 || true
+    "$iptables_cmd" -w 5 -t nat -D POSTROUTING -s 172.22.0.0/16 ! -d 172.22.0.0/16 ! -d 172.23.0.0/16 -j MASQUERADE >/dev/null 2>&1 || true
+    "$iptables_cmd" -w 5 -t nat -D POSTROUTING -s 172.23.0.0/16 ! -d 172.22.0.0/16 ! -d 172.23.0.0/16 -j MASQUERADE >/dev/null 2>&1 || true
+    "$iptables_cmd" -w 5 -t nat -D POSTROUTING -s 172.23.0.0/16 ! -d 172.22.0.0/16 -m addrtype ! --dst-type LOCAL -j MASQUERADE >/dev/null 2>&1 || true
+  fi
+
+  if [ -n "$ip6tables_cmd" ]; then
+    "$ip6tables_cmd" -w 5 -D FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT >/dev/null 2>&1 || true
+    "$ip6tables_cmd" -w 5 -D FORWARD -s fddd:1194:1194:1194::/64 -j ACCEPT >/dev/null 2>&1 || true
+    "$ip6tables_cmd" -w 5 -t nat -D POSTROUTING -s fddd:1194:1194:1194::/64 ! -d fddd:1194:1194:1194::/64 -j MASQUERADE >/dev/null 2>&1 || true
   fi
 }
 
@@ -165,6 +221,23 @@ remove_selinux_port_if_requested() {
   fi
 }
 
+purge_openvpn_package_if_requested() {
+  if ! command -v apt-get >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if ! dpkg -s openvpn >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if ask_yes_no "是否同时卸载 OpenVPN 软件包本身（删除 distro package templates / unit files）？" "y"; then
+    apt-get remove --purge -y openvpn >/dev/null 2>&1 || {
+      echo "Failed to purge openvpn package." >&2
+      exit 1
+    }
+  fi
+}
+
 cleanup_empty_dirs() {
   rmdir "$SERVER_DIR" >/dev/null 2>&1 || true
   rmdir "$OPENVPN_DIR" >/dev/null 2>&1 || true
@@ -201,6 +274,8 @@ stop_service_if_present openvpn-iptables-udp.service
 stop_service_if_present openvpn-iptables-tcp.service
 stop_service_if_present openvpn-iptables-tcp-udp-exchange-rules.service
 stop_service_if_present openvpn-iptables.service
+remove_client_services_and_hooks
+remove_openvpn_iptables_rules
 
 remove_if_exists "$CLIENT_LINK"
 remove_if_exists "$REVOKE_LINK"
@@ -218,6 +293,7 @@ if [ "$keep_client_config" = false ]; then
   remove_if_exists "$UDP_CCD_DIR"
   remove_if_exists "$TCP_CCD_DIR"
   remove_if_exists "$CLIENT_DIR"
+  remove_if_exists "$CLIENT_RUNTIME_DIR"
   remove_if_exists "$UDP_IPP_FILE"
   remove_if_exists "$TCP_IPP_FILE"
   remove_if_exists "$EASYRSA_DIR"
@@ -240,6 +316,7 @@ if ask_yes_no "是否删除上游 OpenVPN 写入的系统调优文件和服务 d
   remove_if_exists "$UPSTREAM_SYSCTL_OPTIMIZE"
   remove_if_exists "$UDP_OPENVPN_DROPIN_DIR"
   remove_if_exists "$TCP_OPENVPN_DROPIN_DIR"
+  remove_matching_paths /etc/systemd/system/multi-user.target.wants/openvpn-iptables*.service /etc/systemd/system/multi-user.target.wants/openvpn-server@*.service /etc/systemd/system/multi-user.target.wants/openvpn-client-*.service
 fi
 
 if ask_yes_no "是否删除 /etc/rc.local 中由 OpenVPN 安装写入的启动规则？" "y"; then
@@ -252,6 +329,8 @@ remove_selinux_port_if_requested
 if command -v systemctl >/dev/null 2>&1; then
   systemctl daemon-reload >/dev/null 2>&1 || true
 fi
+
+purge_openvpn_package_if_requested
 
 if is_dir_non_empty "$OPENVPN_DIR"; then
   if ask_yes_no "$OPENVPN_DIR NOT empty! 非空！确定删除么？" "y"; then

@@ -207,6 +207,25 @@ check_credentials_dir() {
   fi
 }
 
+check_runtime_state_access() {
+  check_mode "$SERVER_DIR" '750' 'server directory'
+  check_group "$SERVER_DIR" 'server directory'
+  check_mode "$UDP_CCD_DIR" '750' 'UDP CCD directory'
+  check_group "$UDP_CCD_DIR" 'UDP CCD directory'
+  check_mode "$TCP_CCD_DIR" '750' 'TCP CCD directory'
+  check_group "$TCP_CCD_DIR" 'TCP CCD directory'
+  check_mode "$SERVER_CONF" '640' 'UDP server config'
+  check_group "$SERVER_CONF" 'UDP server config'
+  check_mode "$TCP_SERVER_CONF" '640' 'TCP server config'
+  check_group "$TCP_SERVER_CONF" 'TCP server config'
+  check_mode "$CLIENT_COMMON_FILE" '640' 'shared client template'
+  check_group "$CLIENT_COMMON_FILE" 'shared client template'
+  check_mode "$UDP_IPP_FILE" '640' 'UDP ipp file'
+  check_group "$UDP_IPP_FILE" 'UDP ipp file'
+  check_mode "$TCP_IPP_FILE" '640' 'TCP ipp file'
+  check_group "$TCP_IPP_FILE" 'TCP ipp file'
+}
+
 main() {
   local udp_port
   local tcp_port
@@ -229,6 +248,7 @@ main() {
   check_exists "${SERVER_DIR}/tc.key" 'tls-crypt key'
 
   check_credentials_dir
+  check_runtime_state_access
 
   for helper_script in "${HELPER_SCRIPTS[@]}"; do
     check_executable "$helper_script" 'restored helper script'

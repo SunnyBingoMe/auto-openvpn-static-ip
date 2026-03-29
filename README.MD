@@ -142,7 +142,8 @@ route 172.22.0.0 255.255.0.0
 - `/etc/openvpn/server/to-get-from-hwdsl2.sh`
 - `/etc/openvpn/ccd-udp`
 
-以上脚本和 CCD 目录安装后会设置为仅 root 可访问。
+- 管理脚本本身仍保持仅 root 可执行；但 OpenVPN 运行时需要读取的目录和文件（例如 `server-udp.conf`、`server-tcp.conf`、`client-common-udp-tcp.txt`、`ccd-udp`、`ccd-tcp`、`ipp-udp.txt`、`ipp-tcp.txt`）会设置为 `root:<OpenVPN runtime group>`，并给予 group 读取/遍历权限，避免 `user nobody` 的 server 进程无法访问。
+- 默认情况下，这个 runtime group 通常是 `nogroup` 或 `nobody`，脚本会从服务端配置中的 `group` 指令自动探测；`client-pwd-auth` 目录和凭据文件仍保持更严格的 `750/640` 权限，只向该 runtime group 开放读取。
 
 如果是通过 `sudo` 由普通用户创建客户端，生成的 `.ovpn` 会尽量归属该普通用户，而不是 `root`。
 

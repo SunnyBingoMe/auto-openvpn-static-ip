@@ -333,6 +333,48 @@ detect_openvpn_runtime_group() {
   return 1
 }
 
+ensure_runtime_state_access() {
+  local runtime_group
+
+  runtime_group="$(detect_openvpn_runtime_group)" || {
+    echo "Failed to determine OpenVPN runtime group for runtime state files" >&2
+    exit 1
+  }
+
+  chown root:"$runtime_group" "$SERVER_DIR" "$UDP_CCD_DIR" "$TCP_CCD_DIR"
+  chmod 750 "$SERVER_DIR" "$UDP_CCD_DIR" "$TCP_CCD_DIR"
+
+  if [ -f "$SERVER_CONF" ]; then
+    chown root:"$runtime_group" "$SERVER_CONF"
+    chmod 640 "$SERVER_CONF"
+  fi
+
+  if [ -f "$TCP_SERVER_CONF" ]; then
+    chown root:"$runtime_group" "$TCP_SERVER_CONF"
+    chmod 640 "$TCP_SERVER_CONF"
+  fi
+
+  if [ -f "$CLIENT_COMMON_FILE" ]; then
+    chown root:"$runtime_group" "$CLIENT_COMMON_FILE"
+    chmod 640 "$CLIENT_COMMON_FILE"
+  fi
+
+  if [ -f "$UDP_IPP_FILE" ]; then
+    chown root:"$runtime_group" "$UDP_IPP_FILE"
+    chmod 640 "$UDP_IPP_FILE"
+  fi
+
+  if [ -f "$TCP_IPP_FILE" ]; then
+    chown root:"$runtime_group" "$TCP_IPP_FILE"
+    chmod 640 "$TCP_IPP_FILE"
+  fi
+
+  find "$UDP_CCD_DIR" -maxdepth 1 -type f -exec chown root:"$runtime_group" {} +
+  find "$UDP_CCD_DIR" -maxdepth 1 -type f -exec chmod 640 {} +
+  find "$TCP_CCD_DIR" -maxdepth 1 -type f -exec chown root:"$runtime_group" {} +
+  find "$TCP_CCD_DIR" -maxdepth 1 -type f -exec chmod 640 {} +
+}
+
 ensure_pwd_auth_access() {
   local runtime_group
 
@@ -665,14 +707,13 @@ if [ "$OPENVPN_ROLE" = "server" ]; then
   refresh_client_common_template
   ensure_pwd_auth_access
 
-  chmod 700 "$UDP_CCD_DIR"
-  chmod 700 "$TCP_CCD_DIR"
   chmod 700 "$CLIENT_DIR"
 
   ensure_server_conf_has_ccd
   ensure_udp_server_conf
   ensure_tcp_server_conf
   ensure_cross_subnet_routes
+  ensure_runtime_state_access
   ensure_firewall_services
   ensure_tcp_selinux_port
   ensure_initial_client_ccd

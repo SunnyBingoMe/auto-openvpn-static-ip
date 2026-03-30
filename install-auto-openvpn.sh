@@ -123,6 +123,20 @@ has_command() {
   command -v "$1" >/dev/null 2>&1
 }
 
+ensure_openvpn_apt_package_installed_on_nix_as_client() {
+  if has_command openvpn; then
+    return 0
+  fi
+
+  if ! has_command apt-get; then
+    echo "openvpn command is missing and apt-get is unavailable." >&2
+    exit 1
+  fi
+
+  run_root_cmd apt-get -yqq update
+  run_root_cmd apt-get -yqq --no-install-recommends install openvpn
+}
+
 deploy_file() {
   local source_file="$1"
   local target_file="$2"
@@ -739,6 +753,7 @@ if [ "$OPENVPN_ROLE" = "server" ]; then
   migrate_openvpn_instances
   restart_openvpn
 else
+  ensure_openvpn_apt_package_installed_on_nix_as_client
   cleanup_server_artifacts_for_client_role
   mkdir -p "$CLIENT_OPENVPN_DIR"
   deploy_file "$FIX_ROUTE_SOURCE" "$FIX_ROUTE_TARGET" 700

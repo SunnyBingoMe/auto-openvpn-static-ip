@@ -183,7 +183,7 @@ remove_existing_client_installations() {
     remove_file_if_present "$service_file"
   done
 
-  for hook_file in /etc/networkd-dispatcher/routable.d/*openvpn-client-restart; do
+  for hook_file in /etc/networkd-dispatcher/routable.d/*openvpn-client-restart*; do
     [ -e "$hook_file" ] || continue
     remove_file_if_present "$hook_file"
   done
@@ -340,6 +340,12 @@ write_dispatcher_hook() {
   cat > "$DISPATCHER_HOOK_PATH" <<EOF
 #!/bin/bash
 set -euo pipefail
+
+case "\${IFACE:-}" in
+  lo|tun*|tap*)
+    exit 0
+    ;;
+esac
 
 systemctl restart ${CLIENT_SERVICE_NAME}
 EOF

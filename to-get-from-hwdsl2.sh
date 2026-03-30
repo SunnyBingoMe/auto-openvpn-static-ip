@@ -11,6 +11,13 @@
 # Released under the MIT License, see the accompanying file LICENSE.txt
 # or https://opensource.org/licenses/MIT
 
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+if [ "$(id -u)" != 0 ]; then
+	echo "Error: This installer must be run as root. Try 'sudo bash $0'" >&2
+	exit 1
+fi
+
 exiterr()  { echo "Error: $1" >&2; exit 1; }
 exiterr2() { exiterr "'apt-get install' failed."; }
 exiterr3() { exiterr "'yum install' failed."; }

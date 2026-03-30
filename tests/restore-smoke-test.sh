@@ -1,6 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
+if [ "$(id -u)" -ne 0 ]; then
+  echo "This script must be run as root or with sudo." >&2
+  exit 1
+fi
+
 OPENVPN_DIR="/etc/openvpn"
 SERVER_DIR="${OPENVPN_DIR}/server"
 UDP_CCD_DIR="${OPENVPN_DIR}/ccd-udp"

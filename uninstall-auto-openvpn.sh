@@ -114,7 +114,7 @@ remove_client_services_and_hooks() {
     remove_if_exists "$service_file"
   done
 
-  for hook_file in /etc/networkd-dispatcher/routable.d/*openvpn-client-restart; do
+  for hook_file in /etc/networkd-dispatcher/routable.d/*openvpn-client-restart*; do
     [ -e "$hook_file" ] || continue
     remove_if_exists "$hook_file"
   done

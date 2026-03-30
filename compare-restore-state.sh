@@ -1,6 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
+if [ "$(id -u)" -ne 0 ]; then
+  echo "This script must be run as root or with sudo." >&2
+  exit 1
+fi
+
 OLD_ROOT="${1:-}"
 NEW_ROOT="${2:-/}"
 STRICT_MODE="${STRICT_MODE:-0}"

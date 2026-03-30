@@ -1,6 +1,15 @@
 #!/bin/bash
 set -euo pipefail
 
+if [ "$(id -u)" -ne 0 ]; then
+  if ! command -v sudo >/dev/null 2>&1; then
+    echo "This script requires root privileges and sudo is not available." >&2
+    exit 1
+  fi
+
+  exec sudo bash "$0" "$@"
+fi
+
 ORIGINAL_ARGS=("$@")
 
 CN=""
@@ -159,7 +168,6 @@ case "${1:-}" in
     ;;
 esac
 
-require_root "${ORIGINAL_ARGS[@]}"
 parse_args "$@"
 validate_client_name
 

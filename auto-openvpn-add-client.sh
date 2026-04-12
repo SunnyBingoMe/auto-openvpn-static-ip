@@ -624,6 +624,27 @@ resolve_peer_server_conf() {
   esac
 }
 
+enforce_ccd_permissions() {
+  local ccd_file
+
+  case "$PROFILE_PROTO" in
+    tcp)
+      ccd_file="${TCP_CCD_DIR}/${CN}"
+      ;;
+    udp)
+      ccd_file="${UDP_CCD_DIR}/${CN}"
+      ;;
+  esac
+
+  if [ ! -f "$ccd_file" ]; then
+    echo "CCD file missing after IP assignment: $ccd_file" >&2
+    exit 1
+  fi
+
+  chown root:nogroup "$ccd_file"
+  chmod 644 "$ccd_file"
+}
+
 extract_server_value() {
   local conf_file="$1"
   local key="$2"
@@ -819,6 +840,8 @@ else
     OPENVPN_IPP_FILE="$UDP_IPP_FILE" \
     bash "$ASSIGN_SCRIPT" "$CN"
 fi
+
+enforce_ccd_permissions
 
 PROFILE_SOURCE="$(printf '%s\n' "$INSTALL_OUTPUT" | extract_generated_profile_from_output || true)"
 if [ -z "$PROFILE_SOURCE" ] || [ ! -f "$PROFILE_SOURCE" ]; then
